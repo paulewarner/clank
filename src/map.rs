@@ -8,7 +8,7 @@ impl Component for Presence {
 
 pub struct Space {
     passable: bool,
-    contents: Option<Entity>
+    contents: Option<Entity>,
 }
 
 impl Component for Space {
@@ -19,28 +19,25 @@ impl Space {
     pub fn new(passable: bool) -> Space {
         Space {
             passable,
-            contents: None
+            contents: None,
         }
     }
 
     pub fn new_with_contents(passable: bool, contents: Entity) -> Space {
         Space {
             passable,
-            contents: Some(contents)
+            contents: Some(contents),
         }
     }
 }
 
 pub struct Move {
-    to: Entity
+    to: Entity,
 }
 
 impl Move {
-
     pub fn to(e: Entity) -> Move {
-        Move {
-            to: e
-        }
+        Move { to: e }
     }
 }
 
@@ -51,7 +48,11 @@ impl Component for Move {
 pub struct MapSystem;
 
 impl<'a> System<'a> for MapSystem {
-    type SystemData = (Entities<'a>, WriteStorage<'a, Space>, WriteStorage<'a, Move>);
+    type SystemData = (
+        Entities<'a>,
+        WriteStorage<'a, Space>,
+        WriteStorage<'a, Move>,
+    );
 
     fn run(&mut self, (entities, mut spaces, mut moves): Self::SystemData) {
         let mut to_remove = vec![];
@@ -86,4 +87,3 @@ impl<'a> System<'a> for MapSystem {
         }
     }
 }
-
