@@ -17,7 +17,9 @@ fn setup_logger() -> Result<(), fern::InitError> {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
                 chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
-                record.target(),
+                record.file().and_then(|x| record.line()
+                    .map(|y| format!("{}:{}", x, y)))
+                    .unwrap_or(String::from(record.target())),
                 record.level(),
                 message
             ))
