@@ -4,12 +4,18 @@ extern crate specs;
 extern crate log;
 extern crate chrono;
 extern crate fern;
+extern crate vulkano;
+extern crate vulkano_shaders;
+extern crate vulkano_win;
+extern crate winit;
+extern crate image;
 
 use std::sync::Arc;
 
 use specs::prelude::*;
 
 mod map;
+mod graphics;
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -70,27 +76,29 @@ impl<'a> System<'a> for CombatSystem {
 
 fn main() {
     setup_logger().expect("Failed to setup logging");
-    let mut world = World::new();
-    world.register::<Combatant>();
-    world.register::<map::Presence>();
-    world.register::<map::Move>();
-    world.register::<map::Space>();
 
-    let mut dispatcher = DispatcherBuilder::new()
-        .with(CombatSystem, "combat", &[])
-        .with(map::MapSystem, "map", &[])
-        .build();
+    graphics::render();
+    // let mut world = World::new();
+    // world.register::<Combatant>();
+    // world.register::<map::Presence>();
+    // world.register::<map::Move>();
+    // world.register::<map::Space>();
 
-    let person = world.create_entity().with(map::Presence).build();
+    // let mut dispatcher = DispatcherBuilder::new()
+    //     .with(CombatSystem, "combat", &[])
+    //     .with(map::MapSystem, "map", &[])
+    //     .build();
 
-    let empty_space = world.create_entity().with(map::Space::new(true)).build();
+    // let person = world.create_entity().with(map::Presence).build();
 
-    world
-        .create_entity()
-        .with(map::Space::new_with_contents(true, person))
-        .with(map::Move::to(empty_space))
-        .build();
+    // let empty_space = world.create_entity().with(map::Space::new(true)).build();
 
-    dispatcher.setup(&mut world.res);
-    dispatcher.dispatch(&mut world.res);
+    // world
+    //     .create_entity()
+    //     .with(map::Space::new_with_contents(true, person))
+    //     .with(map::Move::to(empty_space))
+    //     .build();
+
+    // dispatcher.setup(&mut world.res);
+    // dispatcher.dispatch(&mut world.res);
 }
