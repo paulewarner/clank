@@ -78,27 +78,30 @@ fn main() {
     setup_logger().expect("Failed to setup logging");
 
     graphics::render();
-    // let mut world = World::new();
-    // world.register::<Combatant>();
-    // world.register::<map::Presence>();
-    // world.register::<map::Move>();
-    // world.register::<map::Space>();
 
-    // let mut dispatcher = DispatcherBuilder::new()
-    //     .with(CombatSystem, "combat", &[])
-    //     .with(map::MapSystem, "map", &[])
-    //     .build();
+    let mut world = World::new();
+    world.register::<Combatant>();
+    world.register::<map::Presence>();
+    world.register::<map::Move>();
+    world.register::<map::Space>();
+    world.register::<graphics::Graphics>();
 
-    // let person = world.create_entity().with(map::Presence).build();
+    let mut dispatcher = DispatcherBuilder::new()
+        .with(graphics::GraphicsSystem::new(), "graphics", &[])
+        .with(CombatSystem, "combat", &[])
+        .with(map::MapSystem, "map", &[])
+        .build();
 
-    // let empty_space = world.create_entity().with(map::Space::new(true)).build();
+    let person = world.create_entity().with(map::Presence).build();
 
-    // world
-    //     .create_entity()
-    //     .with(map::Space::new_with_contents(true, person))
-    //     .with(map::Move::to(empty_space))
-    //     .build();
+    let empty_space = world.create_entity().with(map::Space::new(true)).build();
 
-    // dispatcher.setup(&mut world.res);
-    // dispatcher.dispatch(&mut world.res);
+    world
+        .create_entity()
+        .with(map::Space::new_with_contents(true, person))
+        .with(map::Move::to(empty_space))
+        .build();
+
+    dispatcher.setup(&mut world.res);
+    dispatcher.dispatch(&mut world.res);
 }
