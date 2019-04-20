@@ -100,17 +100,17 @@ pub fn render() {
     };
 
     #[derive(Debug, Clone)]
-    struct Vertex { position: [f32; 2] }
+    struct Vertex { position: [f32; 4]}
     vulkano::impl_vertex!(Vertex, position);
 
     let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
         device.clone(),
         BufferUsage::all(),
         [
-            Vertex { position: [-1.0, -1.0 ] },
-            Vertex { position: [-1.0,  0.5 ] },
-            Vertex { position: [ 0.5, -1.0 ] },
-            Vertex { position: [ 0.5,  0.5 ] },
+            Vertex { position: [ -0.35, -0.25, -0.35, -0.25] },
+            Vertex { position: [ -0.35,  0.75, -0.35, -0.25] },
+            Vertex { position: [ 0.65, -0.25, -0.35, -0.25] },
+            Vertex { position: [ 0.65,  0.75, -0.35, -0.25] },
         ].iter().cloned()
     ).unwrap();
 
@@ -265,11 +265,11 @@ mod vs {
         ty: "vertex",
         src: "
 #version 450
-layout(location = 0) in vec2 position;
+layout(location = 0) in vec4 position;
 layout(location = 0) out vec2 tex_coords;
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
-    tex_coords = position + vec2(0.5);
+    gl_Position = vec4(vec2(position), 0.0, 1.0);
+    tex_coords = vec2(position) + abs(vec2(position[2], position[3]));
 }"
     }
 }
