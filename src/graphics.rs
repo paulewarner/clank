@@ -114,6 +114,17 @@ pub fn render() {
         ].iter().cloned()
     ).unwrap();
 
+    let vertex_buffer2 = CpuAccessibleBuffer::<[Vertex]>::from_iter(
+        device.clone(),
+        BufferUsage::all(),
+        [
+            Vertex { position: [ -1.0,  -1.0, -1.0, -1.0 ] },
+            Vertex { position: [ 0.0,  -1.0, -1.0, -1.0 ] },
+            Vertex { position: [ -1.0, 0.0, -1.0, -1.0 ] },
+            Vertex { position: [ 0.0,  0.0, -1.0, -1.0 ] },
+        ].iter().cloned()
+    ).unwrap();
+
     let vs = vs::Shader::load(device.clone()).unwrap();
     let fs = fs::Shader::load(device.clone()).unwrap();
 
@@ -155,8 +166,13 @@ pub fn render() {
         .build(device.clone())
         .unwrap());
 
-    let set = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
+    let set1 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
         .add_sampled_image(texture1.clone(), sampler.clone()).unwrap()
+        .build().unwrap()
+    );
+
+    let set2 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
+        .add_sampled_image(texture2.clone(), sampler.clone()).unwrap()
         .build().unwrap()
     );
 
@@ -164,7 +180,7 @@ pub fn render() {
     let mut framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
     let mut recreate_swapchain = false;
-    let mut previous_frame_end = Box::new(tex_future1) as Box<GpuFuture>;
+    let mut previous_frame_end = Box::new((Box::new(tex_future1) as Box<GpuFuture>).join(Box::new(tex_future2) as Box<GpuFuture>)) as Box<GpuFuture>;
 
     loop {
         previous_frame_end.cleanup_finished();
@@ -201,7 +217,8 @@ pub fn render() {
         let cb = AutoCommandBufferBuilder::primary_one_time_submit(device.clone(), queue.family())
             .unwrap()
             .begin_render_pass(framebuffers[image_num].clone(), false, clear_values).unwrap()
-            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), set.clone(), ()).unwrap()
+            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), set1.clone(), ()).unwrap()
+            .draw(pipeline.clone(), &dynamic_state, vertex_buffer2.clone(), set2.clone(), ()).unwrap()
             .end_render_pass().unwrap()
             .build().unwrap();
 
