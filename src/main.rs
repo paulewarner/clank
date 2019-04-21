@@ -11,6 +11,9 @@ extern crate winit;
 extern crate image;
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
 
@@ -86,8 +89,14 @@ fn main() {
     world.register::<map::Space>();
     world.register::<graphics::Graphics>();
 
+    let mut events_loop = EventsLoop::new();
+
+    let swapchain_flag = Arc::new(AtomicBool::new(false));
+
+    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone()).unwrap();
+
     let mut dispatcher = DispatcherBuilder::new()
-        .with(graphics::GraphicsSystem::new(), "graphics", &[])
+        .with(graphics_system, "graphics", &[])
         .with(CombatSystem, "combat", &[])
         .with(map::MapSystem, "map", &[])
         .build();
@@ -103,5 +112,19 @@ fn main() {
         .build();
 
     dispatcher.setup(&mut world.res);
-    dispatcher.dispatch(&mut world.res);
+
+    let mut done = false;
+
+    loop {
+        dispatcher.dispatch(&mut world.res);
+
+        events_loop.poll_events(|ev| {
+            match ev {
+                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
+                Event::WindowEvent { event: WindowEvent::Resized(_), .. } => swapchain_flag.store(true, Ordering::Relaxed),
+                _ => ()
+            }
+        });
+        if done { return; }
+    }
 }

@@ -9,6 +9,7 @@
 
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use specs::prelude::*;
 
@@ -18,7 +19,7 @@ use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool};
 use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::format::Format;
-use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPass, RenderPassDesc, RenderPassAbstract};
+use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
 use vulkano::image::{SwapchainImage, ImmutableImage, Dimensions, ImageCreationError};
 use vulkano::instance::{Instance, PhysicalDevice};
 use vulkano::pipeline::GraphicsPipeline;
@@ -32,7 +33,7 @@ use vulkano::sync;
 
 use vulkano_win::VkSurfaceBuild;
 
-use winit::{EventsLoop, Window, WindowBuilder, Event, WindowEvent};
+use winit::{EventsLoop, Window, WindowBuilder};
 
 use image::ImageFormat;
 
@@ -73,8 +74,8 @@ impl Component for Graphics {
     type Storage = VecStorage<Self>;
 }
 
-pub struct GraphicsSystem<D: RenderPassDesc + Send + Sync + 'static> {
-    recreate_swapchain: bool,
+pub struct GraphicsSystem {
+    recreate_swapchain: Arc<AtomicBool>,
     previous_frame_end: Box<GpuFuture + Send + Sync>,
     surface: Arc<Surface<Window>>,
     swapchain: Arc<Swapchain<Window>>,
@@ -85,13 +86,13 @@ pub struct GraphicsSystem<D: RenderPassDesc + Send + Sync + 'static> {
     pipeline: Arc<GraphicsPipeline<
         SingleBufferDefinition<Vertex>,
         Box<dyn PipelineLayoutAbstract + Send + Sync>,
-        Arc<RenderPass<D>>>>,
-    render_pass: Arc<RenderPass<D>>
+        Arc<dyn RenderPassAbstract + Send + Sync>>>,
+    render_pass: Arc<RenderPassAbstract + Send + Sync>
 }
 
-impl<D: RenderPassDesc + Send + Sync + 'static> GraphicsSystem<D> {
+impl GraphicsSystem {
 
-    pub fn new() -> GraphicsSystem<D> {
+    pub fn new(events_loop: &EventsLoop, swaphchain_flag: Arc<AtomicBool>) -> Result<GraphicsSystem, ()> {
         // The start of this example is exactly the same as `triangle`. You should read the
         // `triangle` example if you haven't done so yet.
 
@@ -101,8 +102,7 @@ impl<D: RenderPassDesc + Send + Sync + 'static> GraphicsSystem<D> {
         let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
         trace!("Using device: {} (type: {:?})", physical.name(), physical.ty());
 
-        let mut events_loop = EventsLoop::new();
-        let surface = WindowBuilder::new().build_vk_surface(&events_loop, instance.clone()).unwrap();
+        let surface = WindowBuilder::new().build_vk_surface(events_loop, instance.clone()).unwrap();
         let window = surface.window();
 
         let queue_family = physical.queue_families().find(|&q|
@@ -114,7 +114,7 @@ impl<D: RenderPassDesc + Send + Sync + 'static> GraphicsSystem<D> {
             [(queue_family, 0.5)].iter().cloned()).unwrap();
         let queue = queues.next().unwrap();
 
-        let (mut swapchain, images) = {
+        let (swapchain, images) = {
             let caps = surface.capabilities(physical).unwrap();
 
             let usage = caps.supported_usage_flags;
@@ -127,7 +127,7 @@ impl<D: RenderPassDesc + Send + Sync + 'static> GraphicsSystem<D> {
                 [dimensions.0, dimensions.1]
             } else {
                 // The window no longer exists so exit the application.
-                return;
+                return Err(());
             };
 
             Swapchain::new(device.clone(), surface.clone(), caps.min_image_count, format,
@@ -194,38 +194,35 @@ impl<D: RenderPassDesc + Send + Sync + 'static> GraphicsSystem<D> {
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(fs.main_entry_point(), ())
             .blend_alpha_blending()
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+            .render_pass(Subpass::from(render_pass.clone() as Arc<RenderPassAbstract + Send + Sync>, 0).unwrap())
             .build(device.clone())
             .unwrap());
 
-        let set1 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
-            .add_sampled_image(texture1.clone(), sampler.clone()).unwrap()
-            .build().unwrap()
-        );
-
-        let set2 = Arc::new(PersistentDescriptorSet::start(pipeline.clone(), 0)
-            .add_sampled_image(texture2.clone(), sampler.clone()).unwrap()
-            .build().unwrap()
-        );
-
         let mut dynamic_state = DynamicState { line_width: None, viewports: None, scissors: None };
-        let mut framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
+        let framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
-        let mut recreate_swapchain = false;
-        let mut previous_frame_end = Box::new((Box::new(tex_future1) as Box<GpuFuture>).join(Box::new(tex_future2) as Box<GpuFuture>)) as Box<GpuFuture>;
-
-
-        GraphicsSystem{}
+        Ok(GraphicsSystem{
+            recreate_swapchain: swaphchain_flag,
+            device: device.clone(),
+            previous_frame_end: Box::new(sync::now(device.clone())),
+            surface: surface,
+            swapchain: swapchain,
+            dynamic_state: dynamic_state,
+            framebuffers: framebuffers,
+            pipeline: pipeline,
+            queue: queue,
+            render_pass: render_pass
+        })
     }
 }
 
-impl<'a, D: RenderPassDesc + Send + Sync + 'static> System<'a> for GraphicsSystem<D> {
-    type SystemData = ReadStorage<'a, Graphics>;
+impl<'a> System<'a> for GraphicsSystem {
+    type SystemData = WriteStorage<'a, Graphics>;
 
-    fn run(&mut self, data: ReadStorage<'a, Graphics>) {
+    fn run(&mut self, mut data: Self::SystemData) {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
-        if self.recreate_swapchain {
+        if self.recreate_swapchain.load(Ordering::Relaxed) {
             let dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) = dimensions.to_physical(window.get_hidpi_factor()).into();
                 [dimensions.0, dimensions.1]
@@ -242,13 +239,13 @@ impl<'a, D: RenderPassDesc + Send + Sync + 'static> System<'a> for GraphicsSyste
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(&new_images, self.render_pass.clone(), &mut self.dynamic_state);
 
-            self.recreate_swapchain = false;
+            self.recreate_swapchain.store(true, Ordering::Relaxed);
         }
 
         let (image_num, future) = match swapchain::acquire_next_image(self.swapchain.clone(), None) {
             Ok(r) => r,
             Err(AcquireError::OutOfDate) => {
-                self.recreate_swapchain = true;
+                self.recreate_swapchain.store(true, Ordering::Relaxed);
                 return;
             }
             Err(err) => panic!("{:?}", err)
@@ -259,21 +256,22 @@ impl<'a, D: RenderPassDesc + Send + Sync + 'static> System<'a> for GraphicsSyste
             .unwrap()
             .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values).unwrap();
 
-        for graphics_data in data.join() {
-            cb_in_progress.draw(self.pipeline.clone(),
+        let mut previous_frame_end = std::mem::replace(&mut self.previous_frame_end, Box::new(sync::now(self.device.clone())));
+
+        for graphics_data in (&mut data).join() {
+            cb_in_progress = cb_in_progress.draw(self.pipeline.clone(),
                 &self.dynamic_state,
                 graphics_data.vertex_buffer.clone(),
                 graphics_data.descriptor_set.clone(),
                 ()).unwrap();
-            self.previous_frame_end = Box::new(self.previous_frame_end
-                .join(std::mem::replace(
-                    &mut graphics_data.future,
-                    Box::new(sync::now(self.device.clone()))))) as Box<GpuFuture + Send + Sync>;
+                previous_frame_end = Box::new(previous_frame_end.join(std::mem::replace(
+                            &mut graphics_data.future,
+                            Box::new(sync::now(self.device.clone())))));
         }
         let cb = cb_in_progress.end_render_pass().unwrap()
             .build().unwrap();
 
-        let future = self.previous_frame_end.join(future)
+        let future = previous_frame_end.join(future)
             .then_execute(self.queue.clone(), cb).unwrap()
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
@@ -283,7 +281,7 @@ impl<'a, D: RenderPassDesc + Send + Sync + 'static> System<'a> for GraphicsSyste
                 self.previous_frame_end = Box::new(future) as Box<_>;
             }
             Err(FlushError::OutOfDate) => {
-                self.recreate_swapchain = true;
+                  self.recreate_swapchain.store(true, Ordering::Relaxed);
                 self.previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
             }
             Err(e) => {
@@ -295,18 +293,18 @@ impl<'a, D: RenderPassDesc + Send + Sync + 'static> System<'a> for GraphicsSyste
 }
 
 pub fn render() {
-    loop {
+    // loop {
 
-        let mut done = false;
-        events_loop.poll_events(|ev| {
-            match ev {
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
-                Event::WindowEvent { event: WindowEvent::Resized(_), .. } => recreate_swapchain = true,
-                _ => ()
-            }
-        });
-        if done { return; }
-    }
+    //     let mut done = false;
+    //     events_loop.poll_events(|ev| {
+    //         match ev {
+    //             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
+    //             Event::WindowEvent { event: WindowEvent::Resized(_), .. } => recreate_swapchain = true,
+    //             _ => ()
+    //         }
+    //     });
+    //     if done { return; }
+    // }
 }
 
 /// This method is called once during initialization, then again whenever the window is resized
