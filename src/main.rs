@@ -82,8 +82,6 @@ impl<'a> System<'a> for CombatSystem {
 fn main() {
     setup_logger().expect("Failed to setup logging");
 
-    graphics::render();
-
     let mut world = World::new();
     world.register::<Combatant>();
     world.register::<map::Presence>();
@@ -95,7 +93,9 @@ fn main() {
 
     let swapchain_flag = Arc::new(AtomicBool::new(false));
 
-    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone()).unwrap();
+    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone())
+        .map_err(|e| error!("Failed to initalize graphics subsystem: {}", e))
+        .expect("Failed to create graphics subsystem");
 
     let mut dispatcher = DispatcherBuilder::new()
         .with(graphics_system, "graphics", &[])

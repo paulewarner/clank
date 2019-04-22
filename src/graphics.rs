@@ -7,6 +7,7 @@
 // notice may not be copied, modified, or distributed except
 // according to those terms.
 
+use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,19 +18,19 @@ use specs::prelude::*;
 use image::ImageBuffer;
 
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
-use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
+use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::descriptor::descriptor_set::{DescriptorSet, FixedSizeDescriptorSetsPool};
 use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
-use vulkano::image::{SwapchainImage, ImmutableImage, Dimensions, ImageCreationError};
+use vulkano::image::{SwapchainImage, ImmutableImage, Dimensions};
 use vulkano::instance::{Instance, PhysicalDevice};
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
-use vulkano::sampler::{BorderColor, Sampler, SamplerAddressMode, Filter, MipmapMode};
-use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, Surface, SwapchainCreationError};
+use vulkano::sampler::{Sampler, SamplerAddressMode, Filter, MipmapMode};
+use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, Surface};
 use vulkano::swapchain;
 use vulkano::sync::{GpuFuture, FlushError};
 use vulkano::sync;
@@ -69,7 +70,9 @@ impl Graphics {
         })
     }
 
-    fn do_load(&mut self, graphics: &mut GraphicsSystem) -> (Box<GpuFuture + Send + Sync>, Arc<CpuAccessibleBuffer<[Vertex]>>, Arc<DescriptorSet + Send + Sync>) {
+    fn do_load(&mut self, graphics: &mut GraphicsSystem) ->
+        Result<(Box<GpuFuture + Send + Sync>, Arc<CpuAccessibleBuffer<[Vertex]>>, Arc<DescriptorSet + Send + Sync>),
+                Box<Error>> {
         let dimensions = self.image.dimensions();
         let (window_width, window_height): (f64, f64) = graphics.surface.window().get_inner_size().unwrap().into();
         let (width, height) = (dimensions.0 as f64, dimensions.1 as f64);
@@ -89,7 +92,7 @@ impl Graphics {
                 Vertex { position: [ lower_x, upper_y, 0.0,  1.0] },
                 Vertex { position: [ upper_x, upper_y,  1.0,  1.0] },
             ].iter().cloned()
-        ).unwrap();
+        )?;
 
         let image_data = self.image.clone().into_raw();
 
@@ -98,15 +101,15 @@ impl Graphics {
                 Dimensions::Dim2d { width: width as u32, height: height as u32 },
                 Format::R8G8B8A8Srgb,
                 graphics.queue.clone()
-        ).unwrap();
+        )?;
 
         let set = Arc::new(graphics.descriptor_pool.lock().unwrap().next()
-            .add_sampled_image(texture, graphics.sampler.clone()).unwrap()
-            .build().unwrap());
+            .add_sampled_image(texture, graphics.sampler.clone())?
+            .build()?);
 
         self.data = Some((vertex_buffer.clone(), set.clone()));
 
-        (Box::new(tex_future), vertex_buffer, set)
+        Ok((Box::new(tex_future), vertex_buffer, set))
     }
 }
 
@@ -136,19 +139,41 @@ pub struct GraphicsSystem {
     sampler: Arc<Sampler>
 }
 
+#[derive(Debug)]
+struct NoneError;
+
+impl std::fmt::Display for NoneError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "No value found")
+    }
+}
+
+#[derive(Debug)]
+struct NoWindowError;
+
+impl std::error::Error for NoneError {}
+
+impl std::fmt::Display for NoWindowError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "No open window found")
+    }
+}
+
+impl std::error::Error for NoWindowError {}
+
 impl GraphicsSystem {
 
-    pub fn new(events_loop: &EventsLoop, swaphchain_flag: Arc<AtomicBool>) -> Result<GraphicsSystem, ()> {
+    pub fn new(events_loop: &EventsLoop, swaphchain_flag: Arc<AtomicBool>) -> Result<GraphicsSystem, Box<std::error::Error>> {
         // The start of this example is exactly the same as `triangle`. You should read the
         // `triangle` example if you haven't done so yet.
 
         let extensions = vulkano_win::required_extensions();
-        let instance = Instance::new(None, &extensions, None).unwrap();
+        let instance = Instance::new(None, &extensions, None)?;
 
-        let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
+        let physical = PhysicalDevice::enumerate(&instance).next().ok_or(NoneError)?;
         trace!("Using device: {} (type: {:?})", physical.name(), physical.ty());
 
-        let surface = WindowBuilder::new().build_vk_surface(events_loop, instance.clone()).unwrap();
+        let surface = WindowBuilder::new().build_vk_surface(events_loop, instance.clone())?;
         let window = surface.window();
 
         let queue_family = physical.queue_families().find(|&q|
@@ -157,14 +182,14 @@ impl GraphicsSystem {
 
         let device_ext = DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() };
         let (device, mut queues) = Device::new(physical, physical.supported_features(), &device_ext,
-            [(queue_family, 0.5)].iter().cloned()).unwrap();
-        let queue = queues.next().unwrap();
+            [(queue_family, 0.5)].iter().cloned())?;
+        let queue = queues.next().ok_or(NoneError)?;
 
         let (swapchain, images) = {
-            let caps = surface.capabilities(physical).unwrap();
+            let caps = surface.capabilities(physical)?;
 
             let usage = caps.supported_usage_flags;
-            let alpha = caps.supported_composite_alpha.iter().next().unwrap();
+            let alpha = caps.supported_composite_alpha.iter().next().ok_or(NoneError)?;
             let format = caps.supported_formats[0].0;
 
             let initial_dimensions = if let Some(dimensions) = window.get_inner_size() {
@@ -173,16 +198,16 @@ impl GraphicsSystem {
                 [dimensions.0, dimensions.1]
             } else {
                 // The window no longer exists so exit the application.
-                return Err(());
+                return Err(Box::new(NoWindowError));
             };
 
             Swapchain::new(device.clone(), surface.clone(), caps.min_image_count, format,
                 initial_dimensions, 1, usage, &queue, SurfaceTransform::Identity, alpha,
-                PresentMode::Fifo, true, None).unwrap()
+                PresentMode::Fifo, true, None)?
         };
 
-        let vs = vs::Shader::load(device.clone()).unwrap();
-        let fs = fs::Shader::load(device.clone()).unwrap();
+        let vs = vs::Shader::load(device.clone())?;
+        let fs = fs::Shader::load(device.clone())?;
 
         let render_pass = Arc::new(
             vulkano::single_pass_renderpass!(device.clone(),
@@ -198,7 +223,7 @@ impl GraphicsSystem {
                     color: [color],
                     depth_stencil: {}
                 }
-            ).unwrap()
+            )?
         );
 
         let sampler = Sampler::new(device.clone(), Filter::Linear, Filter::Linear,
@@ -206,7 +231,7 @@ impl GraphicsSystem {
             SamplerAddressMode::Repeat,
             SamplerAddressMode::Repeat,
             SamplerAddressMode::Repeat,
-            0.0, 1.0, 0.0, 0.0).unwrap();
+            0.0, 1.0, 0.0, 0.0)?;
 
         let pipeline = Arc::new(GraphicsPipeline::start()
             .vertex_input_single_buffer::<Vertex>()
@@ -215,14 +240,14 @@ impl GraphicsSystem {
             .viewports_dynamic_scissors_irrelevant(1)
             .fragment_shader(fs.main_entry_point(), ())
             .blend_alpha_blending()
-            .render_pass(Subpass::from(render_pass.clone() as Arc<RenderPassAbstract + Send + Sync>, 0).unwrap())
-            .build(device.clone())
-            .unwrap());
+            .render_pass(Subpass::from(render_pass.clone() as Arc<RenderPassAbstract + Send + Sync>, 0).ok_or(NoneError)?)
+            .build(device.clone())?);
 
         let mut dynamic_state = DynamicState { line_width: None, viewports: None, scissors: None };
         let framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
-        let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(pipeline.clone() as Arc<PipelineLayoutAbstract + Send + Sync>, 0)));
+        let descriptor_pool = Arc::new(Mutex::new(
+            FixedSizeDescriptorSetsPool::new(pipeline.clone() as Arc<PipelineLayoutAbstract + Send + Sync>, 0)));
 
         Ok(GraphicsSystem{
             recreate_swapchain: swaphchain_flag,
@@ -239,12 +264,45 @@ impl GraphicsSystem {
             sampler: sampler
         })
     }
+
+    fn build_render_pass<'a>(&mut self, mut graphics: WriteStorage<'a, Graphics>, image_num: usize) ->
+        Result<(AutoCommandBuffer, Box<GpuFuture + Send + Sync>),
+               Box<std::error::Error>> {
+        let clear_values = vec!([0.0, 0.0, 1.0, 1.0].into());
+        let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(self.device.clone(), self.queue.family())
+            .unwrap()
+            .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
+
+        let mut previous_frame_end = std::mem::replace(&mut self.previous_frame_end, Box::new(sync::now(self.device.clone())));
+
+        for graphics_data in (&mut graphics).join() {
+            let (vertex_buffer, descriptor_set) = match graphics_data.data.clone() {
+                Some(data) => data,
+                None => {
+                    let (tex_future, vertex_buffer, set) = graphics_data.do_load(self)?;
+                    previous_frame_end = Box::new(previous_frame_end.join(tex_future));
+
+                    (vertex_buffer, set)
+                }
+            };
+
+            cb_in_progress = cb_in_progress.draw(self.pipeline.clone(),
+                &self.dynamic_state,
+                vertex_buffer,
+                descriptor_set,
+                ())?;
+        }
+        Ok((cb_in_progress
+            .end_render_pass()?
+            .build()?,
+            previous_frame_end))
+    }
 }
 
 impl<'a> System<'a> for GraphicsSystem {
     type SystemData = WriteStorage<'a, Graphics>;
 
-    fn run(&mut self, mut data: Self::SystemData) {
+    fn run(&mut self, data: Self::SystemData) {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
         if self.recreate_swapchain.load(Ordering::Relaxed) {
@@ -257,8 +315,10 @@ impl<'a> System<'a> for GraphicsSystem {
 
             let (new_swapchain, new_images) = match self.swapchain.recreate_with_dimension(dimensions) {
                 Ok(r) => r,
-                Err(SwapchainCreationError::UnsupportedDimensions) => return,
-                Err(err) => panic!("{:?}", err)
+                Err(err) => {
+                    error!("Failed to recreate swapchain: {}", err);
+                    return;
+                }
             };
 
             self.swapchain = new_swapchain;
@@ -273,38 +333,19 @@ impl<'a> System<'a> for GraphicsSystem {
                 self.recreate_swapchain.store(true, Ordering::Relaxed);
                 return;
             }
-            Err(err) => panic!("{:?}", err)
+            Err(err) => {
+                error!("Failed to aquire next swapchain image: {}", err);
+                return;
+            }
         };
 
-        let clear_values = vec!([0.0, 0.0, 1.0, 1.0].into());
-        let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(self.device.clone(), self.queue.family())
-            .unwrap()
-            .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values).unwrap();
-
-        let mut previous_frame_end = std::mem::replace(&mut self.previous_frame_end, Box::new(sync::now(self.device.clone())));
-
-        for graphics_data in (&mut data).join() {
-            let (vertex_buffer, descriptor_set) = match graphics_data.data.clone() {
-                Some(data) => data,
-                None => {
-                    let (tex_future, vertex_buffer, set) = graphics_data.do_load(self);
-                    previous_frame_end = Box::new(previous_frame_end.join(tex_future));
-
-                    (vertex_buffer, set)
-                }
-            };
-
-            cb_in_progress = cb_in_progress.draw(self.pipeline.clone(),
-                &self.dynamic_state,
-                vertex_buffer,
-                descriptor_set,
-                ()).unwrap();
-                // previous_frame_end = Box::new(previous_frame_end.join(std::mem::replace(
-                //             &mut graphics_data.future,
-                //             Box::new(sync::now(self.device.clone())))));
-        }
-        let cb = cb_in_progress.end_render_pass().unwrap()
-            .build().unwrap();
+        let (cb, previous_frame_end) = match self.build_render_pass(data, image_num) {
+            Ok(cb) => cb,
+            Err(e) => {
+                error!("Failed to build render pass: {}", e);
+                return;
+            }
+        };
 
         let future = previous_frame_end.join(future)
             .then_execute(self.queue.clone(), cb).unwrap()
@@ -332,20 +373,6 @@ impl<'a> System<'a> for GraphicsSystem {
     }
 }
 
-pub fn render() {
-    // loop {
-
-    //     let mut done = false;
-    //     events_loop.poll_events(|ev| {
-    //         match ev {
-    //             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
-    //             Event::WindowEvent { event: WindowEvent::Resized(_), .. } => recreate_swapchain = true,
-    //             _ => ()
-    //         }
-    //     });
-    //     if done { return; }
-    // }
-}
 
 /// This method is called once during initialization, then again whenever the window is resized
 fn window_size_dependent_setup(
