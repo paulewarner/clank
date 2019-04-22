@@ -111,7 +111,7 @@ fn main() {
         .create_entity()
         .with(map::Space::new_with_contents(true, person))
         .with(map::Move::to(empty_space))
-        .with(graphics::Graphics::load_with_scale("image2.png", ImageFormat::PNG, 0.0, 0.0, 3.0).unwrap())
+        .with(graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 300.0, 0.0, 1.0).unwrap())
         .build();
 
     dispatcher.setup(&mut world.res);

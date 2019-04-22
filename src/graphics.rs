@@ -80,17 +80,14 @@ impl Graphics {
         let lower_y = ((y - height/2.0)/window_height * self.scale) as f32;
         let upper_y = ((y + height/2.0)/window_height * self.scale) as f32;
 
-        let nx = lower_x;
-        let ny = lower_y;
-
         let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             graphics.device.clone(),
             BufferUsage::all(),
             [
-                Vertex { position: [ lower_x, lower_y, nx, ny] },
-                Vertex { position: [ upper_x, lower_y, nx, ny] },
-                Vertex { position: [ lower_x, upper_y, nx, ny] },
-                Vertex { position: [ upper_x, upper_y, nx, ny] },
+                Vertex { position: [ lower_x, lower_y, 0.0, 0.0] },
+                Vertex { position: [ upper_x, lower_y,  1.0, 0.0] },
+                Vertex { position: [ lower_x, upper_y, 0.0,  1.0] },
+                Vertex { position: [ upper_x, upper_y,  1.0,  1.0] },
             ].iter().cloned()
         ).unwrap();
 
@@ -383,7 +380,7 @@ layout(location = 0) in vec4 position;
 layout(location = 0) out vec2 tex_coords;
 void main() {
     gl_Position = vec4(vec2(position), 0.0, 1.0);
-    tex_coords = vec2(position) + abs(vec2(position[2], position[3]));
+    tex_coords = vec2(position[2], position[3]);
 }"
     }
 }
