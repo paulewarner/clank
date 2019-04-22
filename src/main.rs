@@ -4,14 +4,14 @@ extern crate specs;
 extern crate log;
 extern crate chrono;
 extern crate fern;
+extern crate image;
 extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
-extern crate image;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use image::ImageFormat;
 
@@ -19,8 +19,8 @@ use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
 
-mod map;
 mod graphics;
+mod map;
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -111,7 +111,24 @@ fn main() {
         .create_entity()
         .with(map::Space::new_with_contents(true, person))
         .with(map::Move::to(empty_space))
-        .with(graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 300.0, 0.0, 1.0).unwrap())
+        .with(
+            graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 300.0, 0.0, 1.0)
+                .unwrap(),
+        )
+        .build();
+
+    world
+        .create_entity()
+        .with(
+            graphics::Graphics::load_with_scale(
+                "image2.png",
+                ImageFormat::PNG,
+                -200.0,
+                -200.0,
+                1.0,
+            )
+            .unwrap(),
+        )
         .build();
 
     dispatcher.setup(&mut world.res);
@@ -121,13 +138,19 @@ fn main() {
     loop {
         dispatcher.dispatch(&mut world.res);
 
-        events_loop.poll_events(|ev| {
-            match ev {
-                Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
-                Event::WindowEvent { event: WindowEvent::Resized(_), .. } => swapchain_flag.store(true, Ordering::Relaxed),
-                _ => ()
-            }
+        events_loop.poll_events(|ev| match ev {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => done = true,
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => swapchain_flag.store(true, Ordering::Relaxed),
+            _ => (),
         });
-        if done { return; }
+        if done {
+            return;
+        }
     }
 }
