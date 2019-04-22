@@ -13,6 +13,8 @@ extern crate image;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use image::ImageFormat;
+
 use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
@@ -109,6 +111,7 @@ fn main() {
         .create_entity()
         .with(map::Space::new_with_contents(true, person))
         .with(map::Move::to(empty_space))
+        .with(graphics::Graphics::load_with_scale("image2.png", ImageFormat::PNG, 0.0, 0.0, 3.0).unwrap())
         .build();
 
     dispatcher.setup(&mut world.res);

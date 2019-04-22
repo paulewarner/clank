@@ -10,13 +10,16 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 use specs::prelude::*;
 
+use image::ImageBuffer;
+
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
-use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState, CommandBufferExecFuture};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::descriptor::PipelineLayoutAbstract;
-use vulkano::descriptor::descriptor_set::{FixedSizeDescriptorSet, FixedSizeDescriptorSetsPool};
+use vulkano::descriptor::descriptor_set::{DescriptorSet, FixedSizeDescriptorSetsPool};
 use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::format::Format;
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
@@ -28,7 +31,7 @@ use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::sampler::{BorderColor, Sampler, SamplerAddressMode, Filter, MipmapMode};
 use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, Surface, SwapchainCreationError};
 use vulkano::swapchain;
-use vulkano::sync::{GpuFuture, FlushError, NowFuture};
+use vulkano::sync::{GpuFuture, FlushError};
 use vulkano::sync;
 
 use vulkano_win::VkSurfaceBuild;
@@ -43,27 +46,71 @@ fn load_image<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<F
     Ok(BufReader::new(File::open(path)?))
 }
 
-fn load_texture<P: AsRef<std::path::Path>>(path: P, format: ImageFormat, queue: Arc<Queue>) ->
-    Result<(Arc<ImmutableImage<Format>>,
-        CommandBufferExecFuture<NowFuture, AutoCommandBuffer>),
-        ImageCreationError> {
-    let image = image::load(load_image(path).unwrap(),
-    format).unwrap().to_rgba();
-    let (width, height) = image.dimensions();
-    let image_data = image.into_raw().clone();
-
-    ImmutableImage::from_iter(
-        image_data.iter().cloned(),
-            Dimensions::Dim2d { width: width, height: height },
-            Format::R8G8B8A8Srgb,
-            queue.clone()
-        )
+pub struct Graphics {
+    image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+    position: (f64, f64),
+    scale: f64,
+    data: Option<(Arc<CpuAccessibleBuffer<[Vertex]>>, Arc<DescriptorSet + Send + Sync>)>
 }
 
-pub struct Graphics {
-    vertex_buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
-    descriptor_set: Arc<FixedSizeDescriptorSet<Arc<PipelineLayoutAbstract + Send + Sync>, ()>>,
-    future: Box<GpuFuture + Send + Sync>
+impl Graphics {
+    pub fn load<P: AsRef<std::path::Path>>(path: P, format: ImageFormat, x: f64, y: f64) -> std::io::Result<Graphics> {
+        Graphics::load_with_scale(path, format, x, y, 1.0)
+    }
+
+    pub fn load_with_scale<P: AsRef<std::path::Path>>(path: P, format: ImageFormat, x: f64, y: f64, scale: f64) -> std::io::Result<Graphics> {
+        let image = image::load(load_image(path)?, format).unwrap().to_rgba();
+
+        Ok(Graphics{
+            image: image,
+            position: (x, y),
+            scale: scale,
+            data: None
+        })
+    }
+
+    fn do_load(&mut self, graphics: &mut GraphicsSystem) -> (Box<GpuFuture + Send + Sync>, Arc<CpuAccessibleBuffer<[Vertex]>>, Arc<DescriptorSet + Send + Sync>) {
+        let dimensions = self.image.dimensions();
+        let (window_width, window_height): (f64, f64) = graphics.surface.window().get_inner_size().unwrap().into();
+        let (width, height) = (dimensions.0 as f64, dimensions.1 as f64);
+        let (x, y) = (self.position.0 as f64, self.position.1 as f64);
+
+        let lower_x = ((x - width/2.0)/window_width * self.scale) as f32;
+        let upper_x = ((x + width/2.0)/window_width * self.scale) as f32;
+        let lower_y = ((y - height/2.0)/window_height * self.scale) as f32;
+        let upper_y = ((y + height/2.0)/window_height * self.scale) as f32;
+
+        let nx = lower_x;
+        let ny = lower_y;
+
+        let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
+            graphics.device.clone(),
+            BufferUsage::all(),
+            [
+                Vertex { position: [ lower_x, lower_y, nx, ny] },
+                Vertex { position: [ upper_x, lower_y, nx, ny] },
+                Vertex { position: [ lower_x, upper_y, nx, ny] },
+                Vertex { position: [ upper_x, upper_y, nx, ny] },
+            ].iter().cloned()
+        ).unwrap();
+
+        let image_data = self.image.clone().into_raw();
+
+        let (texture, tex_future) = ImmutableImage::from_iter(
+            image_data.iter().cloned(),
+                Dimensions::Dim2d { width: width as u32, height: height as u32 },
+                Format::R8G8B8A8Srgb,
+                graphics.queue.clone()
+        ).unwrap();
+
+        let set = Arc::new(graphics.descriptor_pool.lock().unwrap().next()
+            .add_sampled_image(texture, graphics.sampler.clone()).unwrap()
+            .build().unwrap());
+
+        self.data = Some((vertex_buffer.clone(), set.clone()));
+
+        (Box::new(tex_future), vertex_buffer, set)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +134,9 @@ pub struct GraphicsSystem {
         SingleBufferDefinition<Vertex>,
         Box<dyn PipelineLayoutAbstract + Send + Sync>,
         Arc<dyn RenderPassAbstract + Send + Sync>>>,
-    render_pass: Arc<RenderPassAbstract + Send + Sync>
+    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    descriptor_pool: Arc<Mutex<FixedSizeDescriptorSetsPool<Arc<PipelineLayoutAbstract + Send + Sync + 'static>>>>,
+    sampler: Arc<Sampler>
 }
 
 impl GraphicsSystem {
@@ -135,28 +184,6 @@ impl GraphicsSystem {
                 PresentMode::Fifo, true, None).unwrap()
         };
 
-        let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
-            device.clone(),
-            BufferUsage::all(),
-            [
-                Vertex { position: [ -0.35, -0.25, -0.35, -0.25] },
-                Vertex { position: [ -0.35,  0.75, -0.35, -0.25] },
-                Vertex { position: [ 0.65, -0.25, -0.35, -0.25] },
-                Vertex { position: [ 0.65,  0.75, -0.35, -0.25] },
-            ].iter().cloned()
-        ).unwrap();
-
-        let vertex_buffer2 = CpuAccessibleBuffer::<[Vertex]>::from_iter(
-            device.clone(),
-            BufferUsage::all(),
-            [
-                Vertex { position: [ -1.0,  -1.0, -1.0, -1.0 ] },
-                Vertex { position: [ 0.0,  -1.0, -1.0, -1.0 ] },
-                Vertex { position: [ -1.0, 0.0, -1.0, -1.0 ] },
-                Vertex { position: [ 0.0,  0.0, -1.0, -1.0 ] },
-            ].iter().cloned()
-        ).unwrap();
-
         let vs = vs::Shader::load(device.clone()).unwrap();
         let fs = fs::Shader::load(device.clone()).unwrap();
 
@@ -176,9 +203,6 @@ impl GraphicsSystem {
                 }
             ).unwrap()
         );
-
-        let (texture1, tex_future1) = load_texture("image.png", ImageFormat::PNG, queue.clone()).unwrap();
-        let (texture2, tex_future2) = load_texture("image2.png", ImageFormat::PNG, queue.clone()).unwrap();
 
         let sampler = Sampler::new(device.clone(), Filter::Linear, Filter::Linear,
             MipmapMode::Nearest,
@@ -201,6 +225,8 @@ impl GraphicsSystem {
         let mut dynamic_state = DynamicState { line_width: None, viewports: None, scissors: None };
         let framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
+        let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(pipeline.clone() as Arc<PipelineLayoutAbstract + Send + Sync>, 0)));
+
         Ok(GraphicsSystem{
             recreate_swapchain: swaphchain_flag,
             device: device.clone(),
@@ -211,7 +237,9 @@ impl GraphicsSystem {
             framebuffers: framebuffers,
             pipeline: pipeline,
             queue: queue,
-            render_pass: render_pass
+            render_pass: render_pass,
+            descriptor_pool: descriptor_pool,
+            sampler: sampler
         })
     }
 }
@@ -239,7 +267,7 @@ impl<'a> System<'a> for GraphicsSystem {
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(&new_images, self.render_pass.clone(), &mut self.dynamic_state);
 
-            self.recreate_swapchain.store(true, Ordering::Relaxed);
+            self.recreate_swapchain.store(false, Ordering::Relaxed);
         }
 
         let (image_num, future) = match swapchain::acquire_next_image(self.swapchain.clone(), None) {
@@ -259,14 +287,24 @@ impl<'a> System<'a> for GraphicsSystem {
         let mut previous_frame_end = std::mem::replace(&mut self.previous_frame_end, Box::new(sync::now(self.device.clone())));
 
         for graphics_data in (&mut data).join() {
+            let (vertex_buffer, descriptor_set) = match graphics_data.data.clone() {
+                Some(data) => data,
+                None => {
+                    let (tex_future, vertex_buffer, set) = graphics_data.do_load(self);
+                    previous_frame_end = Box::new(previous_frame_end.join(tex_future));
+
+                    (vertex_buffer, set)
+                }
+            };
+
             cb_in_progress = cb_in_progress.draw(self.pipeline.clone(),
                 &self.dynamic_state,
-                graphics_data.vertex_buffer.clone(),
-                graphics_data.descriptor_set.clone(),
+                vertex_buffer,
+                descriptor_set,
                 ()).unwrap();
-                previous_frame_end = Box::new(previous_frame_end.join(std::mem::replace(
-                            &mut graphics_data.future,
-                            Box::new(sync::now(self.device.clone())))));
+                // previous_frame_end = Box::new(previous_frame_end.join(std::mem::replace(
+                //             &mut graphics_data.future,
+                //             Box::new(sync::now(self.device.clone())))));
         }
         let cb = cb_in_progress.end_render_pass().unwrap()
             .build().unwrap();
@@ -278,6 +316,11 @@ impl<'a> System<'a> for GraphicsSystem {
 
         match future {
             Ok(future) => {
+                if cfg!(target_os = "macos") {
+                    // Workaround for moltenvk issue (hang on close)
+                    // FIXME Remove once motenvk is fixed
+                    future.wait(None).expect("waiting on fence failed");
+                }
                 self.previous_frame_end = Box::new(future) as Box<_>;
             }
             Err(FlushError::OutOfDate) => {
