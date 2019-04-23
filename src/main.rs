@@ -12,6 +12,7 @@ extern crate winit;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::mpsc::channel;
 
 use image::ImageFormat;
 
@@ -21,6 +22,7 @@ use specs::prelude::*;
 
 mod graphics;
 mod map;
+mod events;
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -88,6 +90,7 @@ fn main() {
     world.register::<map::Move>();
     world.register::<map::Space>();
     world.register::<graphics::Graphics>();
+    world.register::<events::EventHandler>();
 
     let mut events_loop = EventsLoop::new();
 
@@ -97,10 +100,15 @@ fn main() {
         .map_err(|e| error!("Failed to initalize graphics subsystem: {}", e))
         .expect("Failed to create graphics subsystem");
 
+    let (tx, ty) = channel();
+
+    let event_system = events::EventHandlerSystem::new(ty);
+
     let mut dispatcher = DispatcherBuilder::new()
         .with(graphics_system, "graphics", &[])
         .with(CombatSystem, "combat", &[])
         .with(map::MapSystem, "map", &[])
+        .with(event_system, "events", &[])
         .build();
 
     let person = world.create_entity().with(map::Presence).build();
@@ -120,12 +128,11 @@ fn main() {
     world
         .create_entity()
         .with(
-            graphics::Graphics::load_with_scale(
+            graphics::Graphics::load(
                 "image2.png",
                 ImageFormat::PNG,
                 -200.0,
                 -200.0,
-                1.0,
             )
             .unwrap(),
         )
@@ -138,16 +145,22 @@ fn main() {
     loop {
         dispatcher.dispatch(&mut world.res);
 
-        events_loop.poll_events(|ev| match ev {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => done = true,
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => swapchain_flag.store(true, Ordering::Relaxed),
-            _ => (),
+        events_loop.poll_events(|ev| {
+            match ev {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => done = true,
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(_),
+                    ..
+                } => swapchain_flag.store(true, Ordering::Relaxed),
+                _ => (),
+            };
+            match tx.send(ev) {
+                Ok(()) => (),
+                Err(e) => error!("Failed to send event {}", e)
+            };
         });
         if done {
             return;
