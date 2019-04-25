@@ -22,7 +22,7 @@ use specs::prelude::*;
 
 mod graphics;
 mod map;
-mod events;
+mod script;
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -90,7 +90,7 @@ fn main() {
     world.register::<map::Move>();
     world.register::<map::Space>();
     world.register::<graphics::Graphics>();
-    world.register::<events::EventHandler>();
+    world.register::<script::Script>();
 
     let mut events_loop = EventsLoop::new();
 
@@ -102,7 +102,7 @@ fn main() {
 
     let (tx, ty) = channel();
 
-    let event_system = events::EventHandlerSystem::new(ty);
+    let event_system = script::ScriptSystem::new(ty);
 
     let mut dispatcher = DispatcherBuilder::new()
         .with(graphics_system, "graphics", &[])
@@ -123,6 +123,16 @@ fn main() {
             graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 300.0, 0.0, 1.0)
                 .unwrap(),
         )
+        .with(script::Script::new().with_update(|world, ent| {
+            let mut storage = world.write_storage::<graphics::Graphics>();
+            let image = storage.get_mut(ent).unwrap();
+            let (x, y) = image.position();
+            if x >= -100.0 {
+                image.set_position((x - 0.005, y));
+            } else if x <= 100.0 {
+                image.set_position((x + 0.005, y));
+            }
+        }))
         .build();
 
     world
@@ -144,6 +154,8 @@ fn main() {
 
     loop {
         dispatcher.dispatch(&mut world.res);
+
+        world.maintain();
 
         events_loop.poll_events(|ev| {
             match ev {

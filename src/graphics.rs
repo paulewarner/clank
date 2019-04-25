@@ -144,6 +144,28 @@ impl Graphics {
 
         Ok((Box::new(tex_future), vertex_buffer, set))
     }
+
+    pub fn position(&self) -> (f64, f64) {
+        self.position
+    }
+
+    pub fn set_position(&mut self, (new_x, new_y): (f64, f64)) {
+        let (old_x, old_y) = self.position();
+        let (delta_x, delta_y) = (new_x - old_x, new_y - old_y);
+        self.position = (new_x, new_y);
+        if let Some((vertex_buffer, _)) = &self.data {
+            match vertex_buffer.write() {
+                Ok(mut vertexes) => {
+                    for vertex in vertexes.iter_mut() {
+                        let (vertex_x, vertex_y) = (vertex.position[0], vertex.position[1]);
+                        vertex.position[0] = vertex_x + delta_x as f32;
+                        vertex.position[1] = vertex_y + delta_y as f32;
+                    }
+                },
+                Err(e) => error!("Failed to lock CPU buffer: {}", e)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
