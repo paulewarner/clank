@@ -161,8 +161,8 @@ impl Graphics {
                         vertex.position[0] = vertex_x + delta_x as f32;
                         vertex.position[1] = vertex_y + delta_y as f32;
                     }
-                },
-                Err(e) => error!("Failed to lock CPU buffer: {}", e)
+                }
+                Err(e) => error!("Failed to lock CPU buffer: {}", e),
             }
         }
     }

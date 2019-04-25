@@ -11,8 +11,8 @@ extern crate vulkano_win;
 extern crate winit;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 
 use image::ImageFormat;
 
@@ -137,15 +137,7 @@ fn main() {
 
     world
         .create_entity()
-        .with(
-            graphics::Graphics::load(
-                "image2.png",
-                ImageFormat::PNG,
-                -200.0,
-                -200.0,
-            )
-            .unwrap(),
-        )
+        .with(graphics::Graphics::load("image2.png", ImageFormat::PNG, -200.0, -200.0).unwrap())
         .build();
 
     dispatcher.setup(&mut world.res);
@@ -171,7 +163,7 @@ fn main() {
             };
             match tx.send(ev) {
                 Ok(()) => (),
-                Err(e) => error!("Failed to send event {}", e)
+                Err(e) => error!("Failed to send event {}", e),
             };
         });
         if done {

@@ -1,14 +1,17 @@
-use std::sync::Arc;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
 
-use winit::{Event, KeyboardInput, WindowEvent, VirtualKeyCode};
+use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
 pub struct Script {
     update: Arc<Fn(&mut World, Entity) + Send + Sync>,
-    handlers: HashMap<(winit::ElementState, VirtualKeyCode), Arc<Fn(&mut World, Entity, KeyboardInput) + Send + Sync>>
+    handlers: HashMap<
+        (winit::ElementState, VirtualKeyCode),
+        Arc<Fn(&mut World, Entity, KeyboardInput) + Send + Sync>,
+    >,
 }
 
 impl Component for Script {
@@ -23,23 +26,30 @@ impl Script {
     pub fn new() -> Script {
         Script {
             update: Arc::new(|_x, _y| {}),
-            handlers: HashMap::new()
+            handlers: HashMap::new(),
         }
     }
 
-    pub fn with_update<F: Fn(&mut World, Entity) + Send + Sync + 'static>(mut self, f: F) -> Script {
+    pub fn with_update<F: Fn(&mut World, Entity) + Send + Sync + 'static>(
+        mut self,
+        f: F,
+    ) -> Script {
         self.update = Arc::new(f);
         self
     }
 
-    pub fn with_handler<F: Fn(&mut World, Entity, KeyboardInput) + Send + Sync + 'static>(mut self, input: (winit::ElementState, VirtualKeyCode), f: F) -> Script {
+    pub fn with_handler<F: Fn(&mut World, Entity, KeyboardInput) + Send + Sync + 'static>(
+        mut self,
+        input: (winit::ElementState, VirtualKeyCode),
+        f: F,
+    ) -> Script {
         self.handlers.insert(input, Arc::new(f));
         self
     }
 }
 
 pub struct ScriptSystem {
-    chan: Receiver<Event>
+    chan: Receiver<Event>,
 }
 
 impl<'a> System<'a> for ScriptSystem {
@@ -52,11 +62,8 @@ impl<'a> System<'a> for ScriptSystem {
 }
 
 impl ScriptSystem {
-
     pub fn new(chan: Receiver<Event>) -> ScriptSystem {
-        ScriptSystem {
-            chan
-        }
+        ScriptSystem { chan }
     }
 
     fn run_updates(&mut self, (entities, scripts, lazy): &<ScriptSystem as System>::SystemData) {
@@ -73,20 +80,31 @@ impl ScriptSystem {
     fn run_handlers(&mut self, (entities, scripts, lazy): &<ScriptSystem as System>::SystemData) {
         while let Ok(ev) = self.chan.try_recv() {
             match ev {
-                Event::WindowEvent{window_id: _, event: WindowEvent::KeyboardInput{device_id: _, input}} => {
+                Event::WindowEvent {
+                    window_id: _,
+                    event:
+                        WindowEvent::KeyboardInput {
+                            device_id: _,
+                            input,
+                        },
+                } => {
                     for (entity, script) in (entities, scripts).join() {
                         let input = input.clone();
 
                         if let Some(keycode) = input.virtual_keycode {
-                            script.handlers.get(&(input.state, keycode))
+                            script
+                                .handlers
+                                .get(&(input.state, keycode))
                                 .cloned()
-                                .map(|script| lazy.exec_mut(move |world| {
-                                    script(world, entity, input);
-                                }));
+                                .map(|script| {
+                                    lazy.exec_mut(move |world| {
+                                        script(world, entity, input);
+                                    })
+                                });
                         }
                     }
-                },
-                _ => ()
+                }
+                _ => (),
             }
         }
     }
