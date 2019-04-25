@@ -34,6 +34,10 @@ use image::ImageFormat;
 
 use std::sync::Arc;
 
+lazy_static! {
+    static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
+}
+
 fn load_image<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<File>> {
     Ok(BufReader::new(File::open(path)?))
 }
@@ -150,8 +154,9 @@ impl Graphics {
     }
 
     pub fn set_position(&mut self, (new_x, new_y): (f64, f64)) {
+        let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
         let (old_x, old_y) = self.position();
-        let (delta_x, delta_y) = (new_x - old_x, new_y - old_y);
+        let (delta_x, delta_y) = ((new_x - old_x)/width as f64, (new_y - old_y)/height as f64);
         self.position = (new_x, new_y);
         if let Some((vertex_buffer, _)) = &self.data {
             match vertex_buffer.write() {
@@ -262,6 +267,8 @@ impl GraphicsSystem {
             [(queue_family, 0.5)].iter().cloned(),
         )?;
         let queue = queues.next().ok_or(NoneError)?;
+
+        *VIEWPORT_SIZE.lock().unwrap() = surface.window().get_inner_size().unwrap().into();
 
         let (swapchain, images) = {
             let caps = surface.capabilities(physical)?;
@@ -389,8 +396,7 @@ impl GraphicsSystem {
         let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
             self.queue.family(),
-        )
-        .unwrap()
+        )?
         .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
 
         let mut previous_frame_end = std::mem::replace(
@@ -434,6 +440,7 @@ impl<'a> System<'a> for GraphicsSystem {
             let dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
+                *VIEWPORT_SIZE.lock().unwrap() = dimensions;
                 [dimensions.0, dimensions.1]
             } else {
                 return;
