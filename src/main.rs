@@ -9,8 +9,12 @@ extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
+#[macro_use]
+extern crate lazy_static;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Instant, Duration};
+use std::thread::sleep;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
 
@@ -81,6 +85,9 @@ impl<'a> System<'a> for CombatSystem {
     }
 }
 
+const FPS_CAP: u128 = 60;
+const SCREEN_TICKS_PER_FRAME: u128 = 1000 / FPS_CAP;
+
 fn main() {
     setup_logger().expect("Failed to setup logging");
 
@@ -120,17 +127,17 @@ fn main() {
         .with(map::Space::new_with_contents(true, person))
         .with(map::Move::to(empty_space))
         .with(
-            graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 300.0, 0.0, 1.0)
+            graphics::Graphics::load_with_scale("image.png", ImageFormat::PNG, 100.0, 0.0, 1.0)
                 .unwrap(),
         )
         .with(script::Script::new().with_update(|world, ent| {
             let mut storage = world.write_storage::<graphics::Graphics>();
             let image = storage.get_mut(ent).unwrap();
             let (x, y) = image.position();
-            if x >= -100.0 {
-                image.set_position((x - 0.005, y));
-            } else if x <= 100.0 {
-                image.set_position((x + 0.005, y));
+            if x <= -300.0 {
+                image.set_position((x + 5.0, y));
+            } else {
+                image.set_position((x - 5.0, y));
             }
         }))
         .build();
@@ -144,7 +151,14 @@ fn main() {
 
     let mut done = false;
 
+    let mut average_fps;
+    let mut counted_frames = 0.0;
+
+    let frame_start = Instant::now();
+
     loop {
+        let last_frame = Instant::now();
+
         dispatcher.dispatch(&mut world.res);
 
         world.maintain();
@@ -168,6 +182,13 @@ fn main() {
         });
         if done {
             return;
+        }
+
+        counted_frames += 1.0;
+        average_fps = counted_frames / frame_start.elapsed().as_secs() as f64;
+        trace!("current fps {}", average_fps);
+        if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
+            sleep(Duration::from_millis((SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64));
         }
     }
 }
