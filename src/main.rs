@@ -1,16 +1,17 @@
-extern crate rand;
-extern crate specs;
-#[macro_use]
-extern crate log;
 extern crate chrono;
 extern crate fern;
 extern crate image;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate log;
+extern crate rand;
+extern crate rusttype;
+extern crate specs;
 extern crate vulkano;
 extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
-#[macro_use]
-extern crate lazy_static;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
@@ -144,7 +145,17 @@ fn main() {
 
     world
         .create_entity()
-        .with(graphics::Graphics::load("image2.png", ImageFormat::PNG, -200.0, -200.0).unwrap())
+        .with(
+            graphics::Graphics::load_text_with_font_path(
+                "Hello, Text".to_string(),
+                "Go-Medium.ttf",
+                (0, 0, 0),
+                50.0,
+                0.0,
+                0.0,
+            )
+            .unwrap(),
+        )
         .build();
 
     dispatcher.setup(&mut world.res);
