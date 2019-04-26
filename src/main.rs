@@ -13,10 +13,10 @@ extern crate winit;
 extern crate lazy_static;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Instant, Duration};
-use std::thread::sleep;
 use std::sync::mpsc::channel;
 use std::sync::Arc;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use image::ImageFormat;
 
@@ -188,7 +188,9 @@ fn main() {
         average_fps = counted_frames / frame_start.elapsed().as_secs() as f64;
         trace!("current fps {}", average_fps);
         if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
-            sleep(Duration::from_millis((SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64));
+            sleep(Duration::from_millis(
+                (SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64,
+            ));
         }
     }
 }

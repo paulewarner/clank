@@ -156,7 +156,10 @@ impl Graphics {
     pub fn set_position(&mut self, (new_x, new_y): (f64, f64)) {
         let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
         let (old_x, old_y) = self.position();
-        let (delta_x, delta_y) = ((new_x - old_x)/width as f64, (new_y - old_y)/height as f64);
+        let (delta_x, delta_y) = (
+            (new_x - old_x) / width as f64,
+            (new_y - old_y) / height as f64,
+        );
         self.position = (new_x, new_y);
         if let Some((vertex_buffer, _)) = &self.data {
             match vertex_buffer.write() {
