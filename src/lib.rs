@@ -89,7 +89,7 @@ impl<'a> System<'a> for CombatSystem {
 const FPS_CAP: u128 = 60;
 const SCREEN_TICKS_PER_FRAME: u128 = 1000 / FPS_CAP;
 
-fn main() {
+pub fn run() {
     setup_logger().expect("Failed to setup logging");
 
     let mut world = World::new();
