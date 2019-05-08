@@ -1,5 +1,5 @@
 [package]
-name = "drain"
+name = "clank"
 version = "0.1.0"
 authors = ["Paul Warner <paul.eliot.warner@gmail.com>"]
 edition = "2018"

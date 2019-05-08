@@ -1,16 +1,19 @@
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
+use super::core::{Clank, EngineHandle, GameObjectComponent, ClankGetter, ClankSetter};
+
 pub struct Script {
-    update: Arc<Fn(&mut World, Entity) + Send + Sync>,
+    update: Arc<Fn(EngineHandle, Clank) + Send + Sync>,
     handlers: HashMap<
         (winit::ElementState, VirtualKeyCode),
-        Arc<Fn(&mut World, Entity, KeyboardInput) + Send + Sync>,
+        Arc<Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
     >,
 }
 
@@ -23,37 +26,60 @@ impl Script {
         true
     }
 
-    pub fn new() -> Script {
-        Script {
+    pub fn new() -> ScriptBuilder {
+        ScriptBuilder {
             update: Arc::new(|_x, _y| {}),
             handlers: HashMap::new(),
         }
     }
+}
 
-    pub fn with_update<F: Fn(&mut World, Entity) + Send + Sync + 'static>(
+pub struct ScriptBuilder {
+    update: Arc<Fn(EngineHandle, Clank) + Send + Sync>,
+    handlers: HashMap<
+        (winit::ElementState, VirtualKeyCode),
+        Arc<Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
+    >,
+}
+
+impl ScriptBuilder {
+    pub fn with_update<F: Fn(EngineHandle, Clank) + Send + Sync + 'static>(
         mut self,
         f: F,
-    ) -> Script {
+    ) -> ScriptBuilder {
         self.update = Arc::new(f);
         self
     }
 
-    pub fn with_handler<F: Fn(&mut World, Entity, KeyboardInput) + Send + Sync + 'static>(
+    pub fn with_handler<F: Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync + 'static>(
         mut self,
         input: (winit::ElementState, VirtualKeyCode),
         f: F,
-    ) -> Script {
+    ) -> ScriptBuilder {
         self.handlers.insert(input, Arc::new(f));
         self
+    }
+
+    pub fn build(self) -> Script {
+        Script {
+            update: self.update,
+            handlers: self.handlers,
+        }
     }
 }
 
 pub struct ScriptSystem {
     chan: Receiver<Event>,
+    setters: HashMap<TypeId, Arc<ClankSetter>>,
+    getters: HashMap<TypeId, Arc<ClankGetter>>,
 }
 
 impl<'a> System<'a> for ScriptSystem {
-    type SystemData = (Entities<'a>, ReadStorage<'a, Script>, Read<'a, LazyUpdate>);
+    type SystemData = (
+        Entities<'a>,
+        ReadStorage<'a, GameObjectComponent<Script>>,
+        Read<'a, LazyUpdate>,
+    );
 
     fn run(&mut self, data: Self::SystemData) {
         self.run_updates(&data);
@@ -62,16 +88,26 @@ impl<'a> System<'a> for ScriptSystem {
 }
 
 impl ScriptSystem {
-    pub fn new(chan: Receiver<Event>) -> ScriptSystem {
-        ScriptSystem { chan }
+    pub fn new(chan: Receiver<Event>, setters: HashMap<TypeId, Arc<ClankSetter>>, getters: HashMap<TypeId, Arc<ClankGetter>>) -> ScriptSystem {
+        ScriptSystem {
+            chan,
+            setters,
+            getters,
+        }
     }
 
     fn run_updates(&mut self, (entities, scripts, lazy): &<ScriptSystem as System>::SystemData) {
         for (ent, script) in (entities, scripts).join() {
-            if script.should_run() {
-                let update = script.update.clone();
+            let ptr = script.get();
+            let script_ptr = ptr.lock().unwrap();
+            if script_ptr.should_run() {
+                let update = script_ptr.update.clone();
+                let setters = self.setters.clone();
+                let getters = self.getters.clone();
                 lazy.exec_mut(move |world| {
-                    update(world, ent);
+                    let handle = EngineHandle::new(world, setters, getters);
+                    let clank = handle.get(ent);
+                    update(handle, clank);
                 });
             }
         }
@@ -90,15 +126,21 @@ impl ScriptSystem {
                 } => {
                     for (entity, script) in (entities, scripts).join() {
                         let input = input.clone();
+                        let ptr = script.get();
+                        let script_ptr = ptr.lock().unwrap();
 
                         if let Some(keycode) = input.virtual_keycode {
-                            script
+                            script_ptr
                                 .handlers
                                 .get(&(input.state, keycode))
                                 .cloned()
                                 .map(|script| {
+                                    let inserters = self.setters.clone();
+                                    let getters = self.getters.clone();
                                     lazy.exec_mut(move |world| {
-                                        script(world, entity, input);
+                                        let handle = EngineHandle::new(world, inserters, getters);
+                                        let clank = handle.get(entity);
+                                        script(handle, clank, input);
                                     })
                                 });
                         }

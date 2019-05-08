@@ -2,11 +2,13 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
 use image::{DynamicImage, ImageBuffer, Rgba};
+
+pub use image::ImageFormat;
 
 use rusttype::{point, Font, Scale};
 
@@ -32,9 +34,7 @@ use vulkano_win::VkSurfaceBuild;
 
 use winit::{EventsLoop, Window, WindowBuilder};
 
-use image::ImageFormat;
-
-use std::sync::Arc;
+use super::core::GameObjectComponent;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
@@ -470,7 +470,7 @@ impl GraphicsSystem {
 
     fn build_render_pass<'a>(
         &mut self,
-        mut graphics: WriteStorage<'a, Graphics>,
+        mut graphics: WriteStorage<'a, GameObjectComponent<Graphics>>,
         image_num: usize,
     ) -> Result<(AutoCommandBuffer, Box<GpuFuture + Send + Sync>), Box<std::error::Error>> {
         let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
@@ -486,10 +486,12 @@ impl GraphicsSystem {
         );
 
         for graphics_data in (&mut graphics).join() {
-            let (vertex_buffer, descriptor_set) = match graphics_data.data.clone() {
+            let p = graphics_data.get();
+            let mut data = p.lock().unwrap();
+            let (vertex_buffer, descriptor_set) = match data.data.clone() {
                 Some(data) => data,
                 None => {
-                    let (tex_future, vertex_buffer, set) = graphics_data.do_load(self)?;
+                    let (tex_future, vertex_buffer, set) = data.do_load(self)?;
                     previous_frame_end = Box::new(previous_frame_end.join(tex_future));
 
                     (vertex_buffer, set)
@@ -512,7 +514,7 @@ impl GraphicsSystem {
 }
 
 impl<'a> System<'a> for GraphicsSystem {
-    type SystemData = WriteStorage<'a, Graphics>;
+    type SystemData = WriteStorage<'a, GameObjectComponent<Graphics>>;
 
     fn run(&mut self, data: Self::SystemData) {
         let window = self.surface.window();
