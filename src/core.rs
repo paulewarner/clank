@@ -11,7 +11,6 @@ use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
 
-
 pub fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, message, record| {
@@ -62,7 +61,7 @@ impl Clank {
     pub fn new() -> Clank {
         Clank {
             components: HashMap::new(),
-            entity: None
+            entity: None,
         }
     }
 
@@ -73,9 +72,15 @@ impl Clank {
     }
 
     pub fn get<'a, T: Send + Sync + 'static>(&'a mut self) -> Option<&'a Mutex<T>> {
-        trace!("looking for: {:?} in {:?}, Present: {}", TypeId::of::<T>(), self.entity, self.components.get(&TypeId::of::<T>()).is_some());
+        trace!(
+            "looking for: {:?} in {:?}, Present: {}",
+            TypeId::of::<T>(),
+            self.entity,
+            self.components.get(&TypeId::of::<T>()).is_some()
+        );
 
-        self.components.get(&TypeId::of::<T>())
+        self.components
+            .get(&TypeId::of::<T>())
             .and_then(|x| x.downcast_ref::<Mutex<T>>())
             .map(|x| x.borrow())
     }
@@ -84,7 +89,10 @@ impl Clank {
 const FPS_CAP: u128 = 60;
 const SCREEN_TICKS_PER_FRAME: u128 = 1000 / FPS_CAP;
 
-pub type ClankSetter = for<'g> Fn(EntityBuilder<'g>, Arc<Any + Send + Sync + 'static>) -> EntityBuilder<'g> + Send + Sync;
+pub type ClankSetter =
+    for<'g> Fn(EntityBuilder<'g>, Arc<Any + Send + Sync + 'static>) -> EntityBuilder<'g>
+        + Send
+        + Sync;
 pub type ClankGetter = Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 
 pub struct ClankEngine<'a, 'b> {
@@ -97,7 +105,12 @@ pub struct ClankEngine<'a, 'b> {
 }
 
 impl<'a, 'b> ClankEngine<'a, 'b> {
-    pub fn new(world: World, dispatcher: DispatcherBuilder<'a, 'b>, swapchain_flag: Arc<AtomicBool>, events_loop: EventsLoop) -> ClankEngine<'a, 'b> {
+    pub fn new(
+        world: World,
+        dispatcher: DispatcherBuilder<'a, 'b>,
+        swapchain_flag: Arc<AtomicBool>,
+        events_loop: EventsLoop,
+    ) -> ClankEngine<'a, 'b> {
         ClankEngine {
             world,
             dispatcher,
@@ -108,15 +121,16 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
         }
     }
 
-    pub fn run<F: for <'g> FnOnce(EngineHandle<'g>)>(mut self, init: F) {
-
+    pub fn run<F: for<'g> FnOnce(EngineHandle<'g>)>(mut self, init: F) {
         let (event_chan, receive_chan) = channel();
 
-        let event_system = super::script::ScriptSystem::new(receive_chan, self.setters.clone(), self.getters.clone());
+        let event_system = super::script::ScriptSystem::new(
+            receive_chan,
+            self.setters.clone(),
+            self.getters.clone(),
+        );
 
-        let mut dispatcher = self.dispatcher
-            .with(event_system, "events", &[])
-            .build();
+        let mut dispatcher = self.dispatcher.with(event_system, "events", &[]).build();
 
         dispatcher.setup(&mut self.world.res);
 
@@ -178,7 +192,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
             Arc::new(|builder, component| {
                 let typed_component = match component.downcast::<Mutex<T>>() {
                     Ok(a) => a,
-                    Err(e) => panic!("Failed downcast {:?}", e)
+                    Err(e) => panic!("Failed downcast {:?}", e),
                 };
 
                 match Arc::try_unwrap(typed_component) {
@@ -194,11 +208,15 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
                 let storage = world.read_storage::<GameObjectComponent<T>>();
                 let component = storage.get(ent);
                 if let Some(comp) = component.map(|x| x.component.clone() as Arc<Mutex<T>>) {
-                    trace!("Found component: {:?} for entity {:?}", TypeId::of::<T>(), ent);
+                    trace!(
+                        "Found component: {:?} for entity {:?}",
+                        TypeId::of::<T>(),
+                        ent
+                    );
                     clank.components.insert(TypeId::of::<T>(), comp);
                 }
                 clank
-            })
+            }),
         );
     }
 
@@ -220,14 +238,16 @@ pub struct EngineHandle<'a> {
 }
 
 impl<'a> EngineHandle<'a> {
-    pub fn new(world: &'a mut World,
-    inserters: HashMap<TypeId, Arc<ClankSetter>>,
-    getters: HashMap<TypeId, Arc<ClankGetter>>) -> EngineHandle<'a> {
-            EngineHandle {
-                world,
-                inserters,
-                getters
-            }
+    pub fn new(
+        world: &'a mut World,
+        inserters: HashMap<TypeId, Arc<ClankSetter>>,
+        getters: HashMap<TypeId, Arc<ClankGetter>>,
+    ) -> EngineHandle<'a> {
+        EngineHandle {
+            world,
+            inserters,
+            getters,
+        }
     }
 
     pub fn add(&mut self, mut c: Clank) {

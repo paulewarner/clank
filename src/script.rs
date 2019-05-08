@@ -1,13 +1,13 @@
-use std::any::{Any, TypeId};
+use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
-use super::core::{Clank, EngineHandle, GameObjectComponent, ClankGetter, ClankSetter};
+use super::core::{Clank, ClankGetter, ClankSetter, EngineHandle, GameObjectComponent};
 
 pub struct Script {
     update: Arc<Fn(EngineHandle, Clank) + Send + Sync>,
@@ -88,7 +88,11 @@ impl<'a> System<'a> for ScriptSystem {
 }
 
 impl ScriptSystem {
-    pub fn new(chan: Receiver<Event>, setters: HashMap<TypeId, Arc<ClankSetter>>, getters: HashMap<TypeId, Arc<ClankGetter>>) -> ScriptSystem {
+    pub fn new(
+        chan: Receiver<Event>,
+        setters: HashMap<TypeId, Arc<ClankSetter>>,
+        getters: HashMap<TypeId, Arc<ClankGetter>>,
+    ) -> ScriptSystem {
         ScriptSystem {
             chan,
             setters,
