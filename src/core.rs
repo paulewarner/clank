@@ -11,7 +11,7 @@ use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
 
-pub fn setup_logger() -> Result<(), fern::InitError> {
+fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -57,6 +57,14 @@ pub struct Clank {
     entity: Option<Entity>,
 }
 
+impl PartialEq for Clank {
+    fn eq(&self, other: &Clank) -> bool {
+        self.entity == other.entity
+    }
+}
+
+impl Eq for Clank {}
+
 impl Clank {
     pub fn new() -> Clank {
         Clank {
@@ -72,13 +80,6 @@ impl Clank {
     }
 
     pub fn get<'a, T: Send + Sync + 'static>(&'a mut self) -> Option<&'a Mutex<T>> {
-        trace!(
-            "looking for: {:?} in {:?}, Present: {}",
-            TypeId::of::<T>(),
-            self.entity,
-            self.components.get(&TypeId::of::<T>()).is_some()
-        );
-
         self.components
             .get(&TypeId::of::<T>())
             .and_then(|x| x.downcast_ref::<Mutex<T>>())
@@ -122,6 +123,8 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
     }
 
     pub fn run<F: for<'g> FnOnce(EngineHandle<'g>)>(mut self, init: F) {
+        setup_logger().expect("Failed to setup logging");
+
         let (event_chan, receive_chan) = channel();
 
         let event_system = super::script::ScriptSystem::new(
@@ -208,11 +211,6 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
                 let storage = world.read_storage::<GameObjectComponent<T>>();
                 let component = storage.get(ent);
                 if let Some(comp) = component.map(|x| x.component.clone() as Arc<Mutex<T>>) {
-                    trace!(
-                        "Found component: {:?} for entity {:?}",
-                        TypeId::of::<T>(),
-                        ent
-                    );
                     clank.components.insert(TypeId::of::<T>(), comp);
                 }
                 clank

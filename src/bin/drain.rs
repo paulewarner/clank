@@ -19,9 +19,7 @@ fn main() {
                             .and_then(|x| x.lock().ok())
                             .unwrap();
                         let (x, y) = image.position();
-                        if x <= -300.0 {
-                            image.set_position((x + 5.0, y));
-                        } else {
+                        if x > -1200.0 {
                             image.set_position((x - 5.0, y));
                         }
                     })

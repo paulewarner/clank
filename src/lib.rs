@@ -38,8 +38,6 @@ pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
 
     let mut engine = core::ClankEngine::new(world, dispatcher, swapchain_flag, events_loop);
 
-    core::setup_logger().expect("Failed to setup logging");
-
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
 
