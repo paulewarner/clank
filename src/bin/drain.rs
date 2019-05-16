@@ -13,7 +13,7 @@ fn main() {
             )
             .with_component(
                 clank::script::Script::new()
-                    .with_update(|_world, mut clank| {
+                    .with_native_update(|_world, mut clank| {
                         let mut image = clank
                             .get::<clank::graphics::Graphics>()
                             .and_then(|x| x.lock().ok())
