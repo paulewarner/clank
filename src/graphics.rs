@@ -34,7 +34,8 @@ use vulkano_win::VkSurfaceBuild;
 
 use winit::{EventsLoop, Window, WindowBuilder};
 
-use super::core::GameObjectComponent;
+use super::core::{GameObjectComponent, MethodAdder, Scriptable};
+use rlua::prelude::*;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
@@ -510,6 +511,12 @@ impl GraphicsSystem {
             cb_in_progress.end_render_pass()?.build()?,
             previous_frame_end,
         ))
+    }
+}
+
+impl Scriptable for Graphics {
+    fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(methods: &'a mut MethodAdder<'a, 'lua, Self, M>) {
+
     }
 }
 

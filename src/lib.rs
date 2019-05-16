@@ -6,6 +6,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate rand;
+extern crate rlua;
 extern crate rusttype;
 extern crate specs;
 extern crate vulkano;

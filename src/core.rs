@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use winit::{Event, EventsLoop, WindowEvent};
 
 use specs::prelude::*;
+use rlua::prelude::*;
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
@@ -32,15 +33,113 @@ fn setup_logger() -> Result<(), fern::InitError> {
     Ok(())
 }
 
-pub struct GameObjectComponent<T: Send + Sync + 'static> {
+pub trait Scriptable: Sized + Send + Sync + 'static {
+    fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(methods: &'a mut MethodAdder<'a, 'lua, Self, M>);
+}
+
+pub struct _MethodAdder<'a, 'lua, F: 'lua, T: Scriptable, M> where M: LuaUserDataMethods<'lua, GameObjectComponent<T>> {
+    methods: &'a mut M,
+    phantom: std::marker::PhantomData<T>,
+    phanto: std::marker::PhantomData<&'lua F>,
+}
+
+pub type MethodAdder<'a, 'lua, T, M> = _MethodAdder<'a, 'lua, (), T, M>;
+
+impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>> MethodAdder<'a, 'lua, T, M> {
+    fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F) where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &T, A) -> LuaResult<R> {
+        self.methods.add_method(name, move |context, wrapper, arg| {
+            let item = wrapper.component.lock().expect("Failed to lock mutex");
+            method(context, &item, arg)
+        })
+    }
+
+    fn add_method_mut<S: ?Sized, A, R, F>(&mut self, name: &S, method: F) where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &mut T, A) -> LuaResult<R> {
+        self.methods.add_method_mut(name, move |context, wrapper, arg| {
+            let mut item = wrapper.component.lock().expect("Failed to lock mutex");
+            method(context, &mut item, arg)
+        })
+    }
+
+    fn add_function<S: ?Sized, A, R, F>(&mut self, name: &S, function: F) where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Fn(LuaContext<'lua>, A) -> LuaResult<R> {
+        self.methods.add_function(name, function)
+    }
+
+    fn add_function_mut<S: ?Sized, A, R, F>(&mut self, name: &S, mut function: F) where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + FnMut(LuaContext<'lua>, A) -> LuaResult<R> {
+        self.methods.add_function_mut(name, function)
+    }
+
+    fn add_meta_method<A, R, F>(&mut self, meta: LuaMetaMethod, method: F) where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &T, A) -> LuaResult<R> {
+            self.methods.add_meta_method(meta, move |context, wrapper, arg| {
+                let item = wrapper.component.lock().expect("Failed to lock mutex");
+                method(context, &item, arg)
+            })
+    }
+
+    fn add_meta_method_mut<A, R, F>(&mut self, meta: LuaMetaMethod, method: F) where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &mut T, A) -> LuaResult<R> {
+            self.methods.add_meta_method_mut(meta, move |context, wrapper, arg| {
+                let mut item = wrapper.component.lock().expect("Failed to lock mutex");
+                method(context, &mut item, arg)
+            })
+    }
+
+    fn add_meta_function<A, R, F>(&mut self, meta: LuaMetaMethod, function: F) where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Fn(LuaContext<'lua>, A) -> LuaResult<R> {
+        self.methods.add_meta_function(meta, function)
+    }
+
+    fn add_meta_function_mut<A, R, F>(&mut self, meta: LuaMetaMethod, function: F) where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + FnMut(LuaContext<'lua>, A) -> LuaResult<R> {
+        self.methods.add_meta_function_mut(meta, function)
+    }
+}
+
+pub struct GameObjectComponent<T: Scriptable + Send + Sync + 'static> {
     component: Arc<Mutex<T>>,
 }
 
-impl<T: Send + Sync + 'static> Component for GameObjectComponent<T> {
+impl<T: Scriptable + Send + Sync> LuaUserData for GameObjectComponent<T> {
+    fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
+        let mut method_adder = MethodAdder {
+            methods,
+            phantom: std::marker::PhantomData,
+            phanto: std::marker::PhantomData
+        };
+
+        T::add_methods(&mut method_adder)
+    }
+}
+
+impl<T: Scriptable + Send + Sync + 'static> Component for GameObjectComponent<T> {
     type Storage = VecStorage<Self>;
 }
 
-impl<T: Send + Sync + 'static> GameObjectComponent<T> {
+impl<T: Scriptable + Send + Sync + 'static> GameObjectComponent<T> {
     pub fn new(component: Mutex<T>) -> GameObjectComponent<T> {
         GameObjectComponent {
             component: Arc::new(component),
@@ -188,7 +287,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
         }
     }
 
-    pub fn register<T: Send + Sync + 'static>(&mut self) {
+    pub fn register<T: Scriptable + Send + Sync + 'static>(&mut self) {
         self.world.register::<GameObjectComponent<T>>();
         self.setters.insert(
             TypeId::of::<T>(),
@@ -239,7 +338,7 @@ impl<'a> EngineHandle<'a> {
     pub fn new(
         world: &'a mut World,
         inserters: HashMap<TypeId, Arc<ClankSetter>>,
-        getters: HashMap<TypeId, Arc<ClankGetter>>,
+        getters: HashMap<TypeId, Arc<ClankGetter>>
     ) -> EngineHandle<'a> {
         EngineHandle {
             world,
