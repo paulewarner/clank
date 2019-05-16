@@ -198,7 +198,7 @@ impl Clank {
         }
     }
 
-    pub fn with_component<T: Any + Send + Sync>(mut self, component: T) -> Clank {
+    pub fn with_component<T: Any + Scriptable + Send + Sync>(mut self, component: T) -> Clank {
         self.components
             .insert(TypeId::of::<T>(), Arc::new(Mutex::new(component)));
         self
