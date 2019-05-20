@@ -37,6 +37,8 @@ pub trait Scriptable: Sized + Send + Sync + 'static {
     fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
         methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
     );
+
+    fn name() -> &'static str;
 }
 
 pub struct _MethodAdder<'a, 'lua, F: 'lua, T: Scriptable, M>
@@ -149,6 +151,15 @@ pub struct GameObjectComponent<T: Scriptable + Send + Sync + 'static> {
     component: Arc<Mutex<T>>,
 }
 
+// I have no idea why a manual implementation of this is required - LuaContext.create_userdata complains otherwise.
+impl<T: Scriptable + Send + Sync> Clone for GameObjectComponent<T> {
+    fn clone(&self) -> Self {
+        GameObjectComponent {
+            component: self.component.clone()
+        }
+    }
+}
+
 impl<T: Scriptable + Send + Sync> LuaUserData for GameObjectComponent<T> {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
         let mut method_adder = MethodAdder {
@@ -221,6 +232,8 @@ pub type ClankSetter =
         + Sync;
 pub type ClankGetter = Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 
+pub type ClankScriptGetter = for <'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
+
 pub struct ClankEngine<'a, 'b> {
     world: World,
     dispatcher: DispatcherBuilder<'a, 'b>,
@@ -228,6 +241,7 @@ pub struct ClankEngine<'a, 'b> {
     events_loop: EventsLoop,
     setters: HashMap<TypeId, Arc<ClankSetter>>,
     getters: HashMap<TypeId, Arc<ClankGetter>>,
+    names: HashMap<&'static str, Arc<ClankScriptGetter>>
 }
 
 impl<'a, 'b> ClankEngine<'a, 'b> {
@@ -244,6 +258,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
             events_loop,
             setters: HashMap::new(),
             getters: HashMap::new(),
+            names: HashMap::new(),
         }
     }
 
@@ -256,6 +271,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
             receive_chan,
             self.setters.clone(),
             self.getters.clone(),
+            self.names.clone(),
         );
 
         let mut dispatcher = self.dispatcher.with(event_system, "events", &[]).build();
@@ -341,6 +357,14 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
                 clank
             }),
         );
+
+        self.names.insert(T::name(), Arc::new(|world, entity, context| {
+            let storage = world.read_storage::<GameObjectComponent<T>>();
+
+            storage.get(entity).cloned()
+                .and_then(|x| context.create_userdata(x).ok())
+                .map(|x|  LuaValue::UserData(x))
+        }));
     }
 
     pub fn register_system<T: for<'d> System<'d> + Send + 'static>(

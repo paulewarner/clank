@@ -15,7 +15,7 @@ use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use specs::prelude::*;
 
 use super::core::{
-    Clank, ClankGetter, ClankSetter, EngineHandle, GameObjectComponent, MethodAdder, Scriptable,
+    Clank, ClankGetter, ClankScriptGetter, ClankSetter, EngineHandle, GameObjectComponent, MethodAdder, Scriptable,
 };
 
 type UpdateScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
@@ -79,10 +79,18 @@ impl ScriptBuilder {
         self.update = Arc::new(move |system, lazy, entity| {
             let script = script.clone();
             let lua_ptr = system.lua.clone();
+            let names = system.names.clone();
+
             lazy.exec_mut(move |world| {
                 let lua = lua_ptr.lock().expect("Failed to lock lua");
                 lua.context(|context| {
                     let chunk = context.load(script.as_ref());
+                    let globals = context.globals();
+                    for (name, getter) in names {
+                        if let Some(component) = getter(world, entity, context) {
+                            globals.set(name, component).expect(&format!("Failed to set value: {}", name));
+                        }
+                    }
                     chunk.exec().expect("Failed to execute chunk");
                 });
             });
@@ -119,12 +127,17 @@ impl Scriptable for Script {
     ) {
 
     }
+
+    fn name() -> &'static str {
+        "events"
+    }
 }
 
 pub struct ScriptSystem {
     chan: Receiver<Event>,
     setters: HashMap<TypeId, Arc<ClankSetter>>,
     getters: HashMap<TypeId, Arc<ClankGetter>>,
+    names: HashMap<&'static str, Arc<ClankScriptGetter>>,
     lua: Arc<Mutex<Lua>>,
 }
 
@@ -146,11 +159,13 @@ impl ScriptSystem {
         chan: Receiver<Event>,
         setters: HashMap<TypeId, Arc<ClankSetter>>,
         getters: HashMap<TypeId, Arc<ClankGetter>>,
+        names: HashMap<&'static str, Arc<ClankScriptGetter>>
     ) -> ScriptSystem {
         ScriptSystem {
             chan,
             setters,
             getters,
+            names,
             lua: Arc::new(Mutex::new(Lua::new())),
         }
     }

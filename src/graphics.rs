@@ -520,6 +520,10 @@ impl Scriptable for Graphics {
     ) {
 
     }
+
+    fn name() -> &'static str {
+        "image"
+    }
 }
 
 impl<'a> System<'a> for GraphicsSystem {
