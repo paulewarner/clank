@@ -20,7 +20,7 @@ use super::core::{
 
 type UpdateScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
 
-type HandlerScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
+// type HandlerScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
 
 pub struct Script {
     update: Arc<UpdateScript>,
@@ -123,7 +123,7 @@ fn load_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
 
 impl Scriptable for Script {
     fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
-        methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
+        _methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
     ) {
 
     }

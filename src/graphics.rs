@@ -516,7 +516,7 @@ impl GraphicsSystem {
 
 impl Scriptable for Graphics {
     fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
-        methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
+        _methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
     ) {
 
     }
