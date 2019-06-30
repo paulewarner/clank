@@ -42,8 +42,10 @@ pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
 
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
+    engine.register::<anim::Animation>();
 
     engine.register_system(graphics_system, "graphics", &[])
+        .register_system(anim::AnimationSystem, "animation", &["graphics"])
 }
 
 pub fn new() -> core::Clank {

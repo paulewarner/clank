@@ -1,4 +1,5 @@
 use std::time::{Instant, Duration};
+use std::sync::Mutex;
 
 use specs::prelude::*;
 use rlua::prelude::*;
@@ -8,12 +9,33 @@ use super::core::GameObjectComponent;
 use super::core::Scriptable;
 use super::core::MethodAdder;
 
-struct Frame {
-    time: Duration,
+pub struct AnimationBuilder {
+    frames: Vec<Frame>
+}
+
+impl AnimationBuilder {
+    pub fn add_frame(mut self, duration: Duration, image: Graphics) -> Self {
+        self.frames.push(Frame {
+            duration,
+            image: GameObjectComponent::new(Mutex::new(image))
+        });
+        self
+    }
+
+    pub fn build(self) -> Animation {
+        Animation {
+            frames: self.frames,
+            start_time: None
+        }
+    }
+}
+
+pub struct Frame {
+    duration: Duration,
     image: GameObjectComponent<Graphics>,
 }
 
-struct Animation {
+pub struct Animation {
     frames: Vec<Frame>,
     start_time: Option<Instant>
 }
@@ -21,12 +43,15 @@ struct Animation {
 impl Animation {
     fn choose_frame(&mut self, now: Instant) -> Option<GameObjectComponent<Graphics>> {
         let total_duration = self.total_duration();
-        let elapsed_time = now.duration_since(self.start_time.unwrap_or(Instant::now())).as_nanos();
-        let mut period = elapsed_time % total_duration.as_nanos();
-        self.start_time = Some(self.start_time.unwrap_or(Instant::now()));
+        let elapsed_time = now.duration_since(self.start_time.unwrap_or(now)).as_nanos();
+        let mut period = match total_duration.as_nanos() {
+            0 => 0,
+            any => elapsed_time % any
+        };
+        self.start_time = Some(self.start_time.unwrap_or(now));
         for frame in &self.frames {
-            let frame_period = frame.time.as_nanos();
-            if frame_period < period {
+            let frame_period = frame.duration.as_nanos();
+            if period < frame_period {
                 return Some(frame.image.clone());
             }
             period -= frame_period;
@@ -34,9 +59,15 @@ impl Animation {
         None
     }
 
-    fn total_duration(&self) -> Duration {
+    pub fn new() -> AnimationBuilder {
+        AnimationBuilder {
+            frames: Vec::new()
+        }
+    }
+
+    pub fn total_duration(&self) -> Duration {
         self.frames.iter()
-            .map(|x| x.time)
+            .map(|x| x.duration)
             .sum()
     }
 }
@@ -53,7 +84,7 @@ impl Scriptable for Animation {
     }
 }
 
-struct AnimationSystem;
+pub struct AnimationSystem;
 
 impl<'a> specs::System<'a> for AnimationSystem {
     type SystemData = (WriteStorage<'a, GameObjectComponent<Animation>>, Entities<'a>, Read<'a, LazyUpdate>);
