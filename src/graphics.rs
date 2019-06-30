@@ -45,6 +45,7 @@ fn load_file<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<Fi
     Ok(BufReader::new(File::open(path)?))
 }
 
+#[derive(Clone)]
 pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     position: (f64, f64),

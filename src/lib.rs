@@ -22,6 +22,7 @@ use winit::EventsLoop;
 use specs::prelude::*;
 
 mod core;
+pub mod anim;
 pub mod graphics;
 pub mod script;
 
