@@ -15,7 +15,8 @@ use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 use specs::prelude::*;
 
 use super::core::{
-    Clank, ClankGetter, ClankScriptGetter, ClankSetter, EngineHandle, GameObjectComponent, MethodAdder, Scriptable,
+    Clank, ClankGetter, ClankScriptGetter, ClankSetter, EngineHandle, GameObjectComponent,
+    MethodAdder, Scriptable,
 };
 
 type UpdateScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
@@ -88,7 +89,9 @@ impl ScriptBuilder {
                     let globals = context.globals();
                     for (name, getter) in names {
                         if let Some(component) = getter(world, entity, context) {
-                            globals.set(name, component).expect(&format!("Failed to set value: {}", name));
+                            globals
+                                .set(name, component)
+                                .expect(&format!("Failed to set value: {}", name));
                         }
                     }
                     chunk.exec().expect("Failed to execute chunk");
@@ -159,7 +162,7 @@ impl ScriptSystem {
         chan: Receiver<Event>,
         setters: HashMap<TypeId, Arc<ClankSetter>>,
         getters: HashMap<TypeId, Arc<ClankGetter>>,
-        names: HashMap<&'static str, Arc<ClankScriptGetter>>
+        names: HashMap<&'static str, Arc<ClankScriptGetter>>,
     ) -> ScriptSystem {
         ScriptSystem {
             chan,

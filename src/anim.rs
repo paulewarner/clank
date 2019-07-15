@@ -1,23 +1,23 @@
-use std::time::{Instant, Duration};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-use specs::prelude::*;
 use rlua::prelude::*;
+use specs::prelude::*;
 
-use super::graphics::Graphics;
 use super::core::GameObjectComponent;
-use super::core::Scriptable;
 use super::core::MethodAdder;
+use super::core::Scriptable;
+use super::graphics::Graphics;
 
 pub struct AnimationBuilder {
-    frames: Vec<Frame>
+    frames: Vec<Frame>,
 }
 
 impl AnimationBuilder {
     pub fn add_frame(mut self, duration: Duration, image: Graphics) -> Self {
         self.frames.push(Frame {
             duration,
-            image: GameObjectComponent::new(Mutex::new(image))
+            image: GameObjectComponent::new(Mutex::new(image)),
         });
         self
     }
@@ -25,7 +25,7 @@ impl AnimationBuilder {
     pub fn build(self) -> Animation {
         Animation {
             frames: self.frames,
-            start_time: None
+            start_time: None,
         }
     }
 }
@@ -37,16 +37,18 @@ pub struct Frame {
 
 pub struct Animation {
     frames: Vec<Frame>,
-    start_time: Option<Instant>
+    start_time: Option<Instant>,
 }
 
 impl Animation {
     fn choose_frame(&mut self, now: Instant) -> Option<GameObjectComponent<Graphics>> {
         let total_duration = self.total_duration();
-        let elapsed_time = now.duration_since(self.start_time.unwrap_or(now)).as_nanos();
+        let elapsed_time = now
+            .duration_since(self.start_time.unwrap_or(now))
+            .as_nanos();
         let mut period = match total_duration.as_nanos() {
             0 => 0,
-            any => elapsed_time % any
+            any => elapsed_time % any,
         };
         self.start_time = Some(self.start_time.unwrap_or(now));
         for frame in &self.frames {
@@ -60,15 +62,11 @@ impl Animation {
     }
 
     pub fn new() -> AnimationBuilder {
-        AnimationBuilder {
-            frames: Vec::new()
-        }
+        AnimationBuilder { frames: Vec::new() }
     }
 
     pub fn total_duration(&self) -> Duration {
-        self.frames.iter()
-            .map(|x| x.duration)
-            .sum()
+        self.frames.iter().map(|x| x.duration).sum()
     }
 }
 
@@ -87,19 +85,21 @@ impl Scriptable for Animation {
 pub struct AnimationSystem;
 
 impl<'a> specs::System<'a> for AnimationSystem {
-    type SystemData = (WriteStorage<'a, GameObjectComponent<Animation>>, Entities<'a>, Read<'a, LazyUpdate>);
+    type SystemData = (
+        WriteStorage<'a, GameObjectComponent<Animation>>,
+        Entities<'a>,
+        Read<'a, LazyUpdate>,
+    );
 
     fn run(&mut self, (mut anims, entities, lazy_update): Self::SystemData) {
         let now = Instant::now();
         for (anim_obj, entity) in (&mut anims, &entities).join() {
             match anim_obj.get().lock() {
-                Ok(mut animation) => {
-                    match animation.choose_frame(now) {
-                        Some(frame) => lazy_update.insert(entity, frame),
-                        None => lazy_update.remove::<GameObjectComponent<Graphics>>(entity)
-                    }
+                Ok(mut animation) => match animation.choose_frame(now) {
+                    Some(frame) => lazy_update.insert(entity, frame),
+                    None => lazy_update.remove::<GameObjectComponent<Graphics>>(entity),
                 },
-                Err(e) => error!("Failed to lock mutex: {}", e)
+                Err(e) => error!("Failed to lock mutex: {}", e),
             }
         }
     }

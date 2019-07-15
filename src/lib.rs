@@ -21,11 +21,11 @@ use winit::EventsLoop;
 
 use specs::prelude::*;
 
-mod core;
 pub mod anim;
+mod core;
 pub mod graphics;
-pub mod script;
 pub mod position;
+pub mod script;
 
 pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
     let world = World::new();
@@ -46,7 +46,8 @@ pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
     engine.register::<anim::Animation>();
     engine.register::<position::Position>();
 
-    engine.register_system(graphics_system, "graphics", &[])
+    engine
+        .register_system(graphics_system, "graphics", &[])
         .register_system(anim::AnimationSystem, "animation", &["graphics"])
 }
 

@@ -155,7 +155,7 @@ pub struct GameObjectComponent<T: Scriptable + Send + Sync + 'static> {
 impl<T: Scriptable + Send + Sync> Clone for GameObjectComponent<T> {
     fn clone(&self) -> Self {
         GameObjectComponent {
-            component: self.component.clone()
+            component: self.component.clone(),
         }
     }
 }
@@ -232,7 +232,8 @@ pub type ClankSetter =
         + Sync;
 pub type ClankGetter = Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 
-pub type ClankScriptGetter = for <'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
+pub type ClankScriptGetter =
+    for<'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
 
 pub struct ClankEngine<'a, 'b> {
     world: World,
@@ -241,7 +242,7 @@ pub struct ClankEngine<'a, 'b> {
     events_loop: EventsLoop,
     setters: HashMap<TypeId, Arc<ClankSetter>>,
     getters: HashMap<TypeId, Arc<ClankGetter>>,
-    names: HashMap<&'static str, Arc<ClankScriptGetter>>
+    names: HashMap<&'static str, Arc<ClankScriptGetter>>,
 }
 
 impl<'a, 'b> ClankEngine<'a, 'b> {
@@ -358,13 +359,18 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
             }),
         );
 
-        self.names.insert(T::name(), Arc::new(|world, entity, context| {
-            let storage = world.read_storage::<GameObjectComponent<T>>();
+        self.names.insert(
+            T::name(),
+            Arc::new(|world, entity, context| {
+                let storage = world.read_storage::<GameObjectComponent<T>>();
 
-            storage.get(entity).cloned()
-                .and_then(|x| context.create_userdata(x).ok())
-                .map(|x|  LuaValue::UserData(x))
-        }));
+                storage
+                    .get(entity)
+                    .cloned()
+                    .and_then(|x| context.create_userdata(x).ok())
+                    .map(|x| LuaValue::UserData(x))
+            }),
+        );
     }
 
     pub fn register_system<T: for<'d> System<'d> + Send + 'static>(
