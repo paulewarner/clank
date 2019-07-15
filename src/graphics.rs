@@ -63,6 +63,17 @@ impl Graphics {
         Graphics::load_with_scale(path, format, 1.0)
     }
 
+    pub fn load_with_crop<P: AsRef<std::path::Path>>(
+        path: P,
+        format: ImageFormat,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32
+    ) -> std::io::Result<Graphics> {
+        Graphics::load_with_scale_and_crop(path, format, 1.0, x, y, width, height)
+    }
+
     pub fn load_with_scale<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
@@ -78,6 +89,28 @@ impl Graphics {
             texture_buffer: None
         })
     }
+
+    pub fn load_with_scale_and_crop<P: AsRef<std::path::Path>>(
+        path: P,
+        format: ImageFormat,
+        scale: f64,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32
+    ) -> std::io::Result<Graphics> {
+        let image = image::load(load_file(path)?, format).unwrap().crop(x, y, width, height).to_rgba();
+
+        Ok(Graphics {
+            image: image,
+            position: None,
+            scale: scale,
+            vertex_buffer: None,
+            texture_buffer: None
+        })
+    }
+
+
 
     pub fn load_text_with_font_path<P: AsRef<std::path::Path>>(
         text: String,
@@ -485,7 +518,6 @@ impl GraphicsSystem {
         for (graphics_data, position_data) in (&mut graphics, &positions).join() {
             let p = graphics_data.get();
             let mut data = p.lock().unwrap();
-            trace!("position: {:?}", data.position);
             let p2 = position_data.get();
             let new_position = p2.lock().unwrap().get();
             if data.position != Some(new_position) {
