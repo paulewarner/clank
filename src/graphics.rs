@@ -35,6 +35,7 @@ use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 
 use super::core::{GameObjectComponent, MethodAdder, Scriptable};
+use super::position::Position;
 use rlua::prelude::*;
 
 lazy_static! {
@@ -48,38 +49,33 @@ fn load_file<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<Fi
 #[derive(Clone)]
 pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-    position: (f64, f64),
+    position: Option<(f64, f64)>,
     scale: f64,
-    data: Option<(
-        Arc<CpuAccessibleBuffer<[Vertex]>>,
-        Arc<DescriptorSet + Send + Sync>,
-    )>,
+    vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
+    texture_buffer: Option<Arc<DescriptorSet + Send + Sync>>,
 }
 
 impl Graphics {
     pub fn load<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        x: f64,
-        y: f64,
     ) -> std::io::Result<Graphics> {
-        Graphics::load_with_scale(path, format, x, y, 1.0)
+        Graphics::load_with_scale(path, format, 1.0)
     }
 
     pub fn load_with_scale<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        x: f64,
-        y: f64,
         scale: f64,
     ) -> std::io::Result<Graphics> {
         let image = image::load(load_file(path)?, format).unwrap().to_rgba();
 
         Ok(Graphics {
             image: image,
-            position: (x, y),
+            position: None,
             scale: scale,
-            data: None,
+            vertex_buffer: None,
+            texture_buffer: None
         })
     }
 
@@ -88,8 +84,6 @@ impl Graphics {
         font_path: P,
         color: (u8, u8, u8),
         size: f32,
-        x: f64,
-        y: f64,
     ) -> std::io::Result<Graphics> {
         let mut font_data = Vec::new();
         load_file(font_path)?.read_to_end(&mut font_data)?;
@@ -97,9 +91,7 @@ impl Graphics {
             text,
             &Font::from_bytes(&font_data).unwrap(),
             color,
-            size,
-            x,
-            y,
+            size
         ))
     }
 
@@ -107,9 +99,7 @@ impl Graphics {
         text: String,
         font: &Font,
         color: (u8, u8, u8),
-        size: f32,
-        x: f64,
-        y: f64,
+        size: f32
     ) -> Graphics {
         let scale = Scale::uniform(size);
         let v_metrics = font.v_metrics(scale);
@@ -153,36 +143,33 @@ impl Graphics {
 
         Graphics {
             image: image,
-            position: (x, y),
+            position: None,
             scale: 1.0,
-            data: None,
+            vertex_buffer: None,
+            texture_buffer: None,
         }
     }
 
-    fn do_load(
-        &mut self,
-        graphics: &mut GraphicsSystem,
-    ) -> Result<
-        (
-            Box<GpuFuture + Send + Sync>,
-            Arc<CpuAccessibleBuffer<[Vertex]>>,
-            Arc<DescriptorSet + Send + Sync>,
-        ),
-        Box<Error>,
-    > {
-        let dimensions = self.image.dimensions();
-        let (window_width, window_height): (f64, f64) =
-            graphics.surface.window().get_inner_size().unwrap().into();
-        let (width, height) = (dimensions.0 as f64, dimensions.1 as f64);
-        let (x, y) = (self.position.0 as f64, self.position.1 as f64);
-
+    fn create_vertexes_for_position(&self,
+        (width, height): (f64, f64),
+        (window_width, window_height): (f64, f64),
+        (x, y): (f64, f64)) -> (f32, f32, f32, f32) {
         let lower_x = ((x - width / 2.0) / window_width * self.scale) as f32;
         let upper_x = ((x + width / 2.0) / window_width * self.scale) as f32;
         let lower_y = ((y - height / 2.0) / window_height * self.scale) as f32;
         let upper_y = ((y + height / 2.0) / window_height * self.scale) as f32;
+        (lower_x, upper_x, lower_y, upper_y)
+    }
 
-        let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
-            graphics.device.clone(),
+    fn create_vertex_buffer(&self, position: (f64, f64), device: Arc<Device>) -> Result<Arc<CpuAccessibleBuffer<[Vertex]>>, Box<dyn Error>> {
+        let reg_dimensions = self.image.dimensions();
+        let dimensions = (reg_dimensions.0 as f64, reg_dimensions.1 as f64);
+        let viewport = VIEWPORT_SIZE.lock().unwrap().clone();
+        let window_dimensions = (viewport.0 as f64, viewport.1 as f64);
+        let (lower_x, upper_x, lower_y, upper_y) = self.create_vertexes_for_position(dimensions, window_dimensions, position);
+
+        let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
+            device,
             BufferUsage::all(),
             [
                 Vertex {
@@ -201,14 +188,19 @@ impl Graphics {
             .iter()
             .cloned(),
         )?;
+        Ok(buffer)
+    }
+
+    fn load_texture_into_gpu(&self, graphics: &GraphicsSystem) -> Result<(Arc<DescriptorSet + Send + Sync>, Box<GpuFuture + Send + Sync>), Box<Error>> {
+        let dimensions = self.image.dimensions();
+        let image_dimensions = (dimensions.0 as f64, dimensions.1 as f64);
 
         let image_data = self.image.clone().into_raw();
-
         let (texture, tex_future) = ImmutableImage::from_iter(
             image_data.iter().cloned(),
             Dimensions::Dim2d {
-                width: width as u32,
-                height: height as u32,
+                width: image_dimensions.0 as u32,
+                height: image_dimensions.1 as u32,
             },
             Format::R8G8B8A8Srgb,
             graphics.queue.clone(),
@@ -224,35 +216,37 @@ impl Graphics {
                 .build()?,
         );
 
-        self.data = Some((vertex_buffer.clone(), set.clone()));
-
-        Ok((Box::new(tex_future), vertex_buffer, set))
+        Ok((set, Box::new(tex_future)))
     }
 
-    pub fn position(&self) -> (f64, f64) {
-        self.position
-    }
-
-    pub fn set_position(&mut self, (new_x, new_y): (f64, f64)) {
+    fn set_position(&mut self, (new_x, new_y): (f64, f64), device: Arc<Device>) -> Result<(), Box<Error>> {
         let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
-        let (old_x, old_y) = self.position();
-        let (delta_x, delta_y) = (
-            (new_x - old_x) / width as f64,
-            (new_y - old_y) / height as f64,
-        );
-        self.position = (new_x, new_y);
-        if let Some((vertex_buffer, _)) = &self.data {
-            match vertex_buffer.write() {
-                Ok(mut vertexes) => {
-                    for vertex in vertexes.iter_mut() {
-                        let (vertex_x, vertex_y) = (vertex.position[0], vertex.position[1]);
-                        vertex.position[0] = vertex_x + delta_x as f32;
-                        vertex.position[1] = vertex_y + delta_y as f32;
+        match self.position {
+            Some((old_x, old_y)) => {
+                self.position = Some((new_x, new_y));
+                let (delta_x, delta_y) = (
+                    (new_x - old_x) / width as f64,
+                    (new_y - old_y) / height as f64,
+                );
+                if let Some(vertex_buffer) = &self.vertex_buffer {
+                    match vertex_buffer.write() {
+                        Ok(mut vertexes) => {
+                            for vertex in vertexes.iter_mut() {
+                                let (vertex_x, vertex_y) = (vertex.position[0], vertex.position[1]);
+                                vertex.position[0] = vertex_x + delta_x as f32;
+                                vertex.position[1] = vertex_y + delta_y as f32;
+                            }
+                        }
+                        Err(e) => error!("Failed to lock CPU buffer: {}", e),
                     }
                 }
-                Err(e) => error!("Failed to lock CPU buffer: {}", e),
+            },
+            None => {
+                self.position = Some((new_x, new_y));
+                self.vertex_buffer = Some(self.create_vertex_buffer((new_x, new_y), device)?);
             }
         }
+        Ok(())
     }
 }
 
@@ -473,6 +467,7 @@ impl GraphicsSystem {
     fn build_render_pass<'a>(
         &mut self,
         mut graphics: WriteStorage<'a, GameObjectComponent<Graphics>>,
+        positions: ReadStorage<'a, GameObjectComponent<Position>>,
         image_num: usize,
     ) -> Result<(AutoCommandBuffer, Box<GpuFuture + Send + Sync>), Box<std::error::Error>> {
         let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
@@ -487,16 +482,29 @@ impl GraphicsSystem {
             Box::new(sync::now(self.device.clone())),
         );
 
-        for graphics_data in (&mut graphics).join() {
+        for (graphics_data, position_data) in (&mut graphics, &positions).join() {
             let p = graphics_data.get();
             let mut data = p.lock().unwrap();
-            let (vertex_buffer, descriptor_set) = match data.data.clone() {
-                Some(data) => data,
-                None => {
-                    let (tex_future, vertex_buffer, set) = data.do_load(self)?;
-                    previous_frame_end = Box::new(previous_frame_end.join(tex_future));
+            trace!("position: {:?}", data.position);
+            let p2 = position_data.get();
+            let new_position = p2.lock().unwrap().get();
+            if data.position != Some(new_position) {
+                data.set_position(new_position, self.device.clone())?;
+            }
+            let position  = data.position.unwrap();
+            let vertex_buffer = data.vertex_buffer.clone().unwrap_or_else(|| {
+                    let vertex_buffer = data.create_vertex_buffer(position, self.device.clone()).expect("Failed to create vertex buffer");
+                    data.vertex_buffer = Some(vertex_buffer.clone());
+                    vertex_buffer
+            });
 
-                    (vertex_buffer, set)
+            let descriptor_set = match data.texture_buffer.clone() {
+                Some(s) => s,
+                None => {
+                    let (texture_buffer, tex_future) = data.load_texture_into_gpu(self)?;
+                    previous_frame_end = Box::new(previous_frame_end.join(tex_future));
+                    data.texture_buffer = Some(texture_buffer.clone());
+                    texture_buffer
                 }
             };
 
@@ -528,9 +536,9 @@ impl Scriptable for Graphics {
 }
 
 impl<'a> System<'a> for GraphicsSystem {
-    type SystemData = WriteStorage<'a, GameObjectComponent<Graphics>>;
+    type SystemData = (ReadStorage<'a, GameObjectComponent<Position>>, WriteStorage<'a, GameObjectComponent<Graphics>>);
 
-    fn run(&mut self, data: Self::SystemData) {
+    fn run(&mut self, (graphics, positions): Self::SystemData) {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
         if self.recreate_swapchain.load(Ordering::Relaxed) {
@@ -575,7 +583,7 @@ impl<'a> System<'a> for GraphicsSystem {
             }
         };
 
-        let (cb, previous_frame_end) = match self.build_render_pass(data, image_num) {
+        let (cb, previous_frame_end) = match self.build_render_pass(positions, graphics, image_num) {
             Ok(cb) => cb,
             Err(e) => {
                 error!("Failed to build render pass: {}", e);
