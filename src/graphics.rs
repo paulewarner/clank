@@ -56,6 +56,16 @@ pub struct Graphics {
 }
 
 impl Graphics {
+    pub fn from_image(image: DynamicImage) -> Graphics {
+        Graphics {
+            image: image.to_rgba(),
+            position: None,
+            scale: 1.0,
+            vertex_buffer: None,
+            texture_buffer: None,
+        }
+    }
+
     pub fn load<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,

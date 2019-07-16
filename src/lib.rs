@@ -8,6 +8,8 @@ extern crate log;
 extern crate rand;
 extern crate rlua;
 extern crate rusttype;
+extern crate serde;
+extern crate serde_json;
 extern crate specs;
 extern crate vulkano;
 extern crate vulkano_shaders;
@@ -26,6 +28,7 @@ mod core;
 pub mod graphics;
 pub mod position;
 pub mod script;
+pub mod sprite;
 
 pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
     let world = World::new();

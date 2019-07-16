@@ -11,6 +11,7 @@ use super::graphics::Graphics;
 
 pub struct AnimationBuilder {
     frames: Vec<Frame>,
+    id: Option<usize>,
 }
 
 impl AnimationBuilder {
@@ -22,10 +23,16 @@ impl AnimationBuilder {
         self
     }
 
+    pub fn id(mut self, id: usize) -> Self {
+        self.id = Some(id);
+        self
+    }
+
     pub fn build(self) -> Animation {
         Animation {
             frames: self.frames,
             start_time: None,
+            id: self.id,
         }
     }
 }
@@ -38,6 +45,7 @@ pub struct Frame {
 pub struct Animation {
     frames: Vec<Frame>,
     start_time: Option<Instant>,
+    id: Option<usize>,
 }
 
 impl Animation {
@@ -62,11 +70,15 @@ impl Animation {
     }
 
     pub fn new() -> AnimationBuilder {
-        AnimationBuilder { frames: Vec::new() }
+        AnimationBuilder { frames: Vec::new(), id: None }
     }
 
     pub fn total_duration(&self) -> Duration {
         self.frames.iter().map(|x| x.duration).sum()
+    }
+
+    pub fn id(&self) -> Option<usize> {
+        self.id
     }
 }
 
