@@ -32,7 +32,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
     Ok(())
 }
 
-pub trait MyMethods<'lua, T: Scriptable> {
+pub trait MethodAdder<'lua, T: Scriptable> {
     fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
     where
         S: AsRef<[u8]>,
@@ -87,7 +87,7 @@ pub trait MyMethods<'lua, T: Scriptable> {
 }
 
 pub trait Scriptable: Sized + Send + Sync + 'static {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(methods: &mut M);
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(methods: &mut M);
 
     fn name() -> &'static str;
 }
@@ -101,10 +101,10 @@ where
     phanto: std::marker::PhantomData<&'lua F>,
 }
 
-pub type MethodAdder<'a, 'lua, T, M> = _MethodAdder<'a, 'lua, (), T, M>;
+pub type MethodAdderImpl<'a, 'lua, T, M> = _MethodAdder<'a, 'lua, (), T, M>;
 
 impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>>
-    MyMethods<'lua, T> for MethodAdder<'a, 'lua, T, M>
+    MethodAdder<'lua, T> for MethodAdderImpl<'a, 'lua, T, M>
 {
     fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
     where
@@ -213,7 +213,7 @@ impl<T: Scriptable + Send + Sync> Clone for GameObjectComponent<T> {
 
 impl<T: Scriptable + Send + Sync> LuaUserData for GameObjectComponent<T> {
     fn add_methods<'lua, M: LuaUserDataMethods<'lua, Self>>(methods: &mut M) {
-        let mut method_adder = MethodAdder {
+        let mut method_adder = MethodAdderImpl {
             methods,
             phantom: std::marker::PhantomData,
             phanto: std::marker::PhantomData,

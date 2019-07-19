@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use super::anim;
-use super::core::{GameObjectComponent, MyMethods, Scriptable};
+use super::core::{GameObjectComponent, MethodAdder, Scriptable};
 use super::graphics;
 
 pub struct SpriteSystem {
@@ -151,5 +151,5 @@ impl Scriptable for Sprite {
         "sprite"
     }
 
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
 }

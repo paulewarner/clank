@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use specs::prelude::*;
 
 use super::core::GameObjectComponent;
-use super::core::MyMethods;
+use super::core::MethodAdder;
 use super::core::Scriptable;
 use super::graphics::Graphics;
 
@@ -85,7 +85,7 @@ impl Animation {
 }
 
 impl Scriptable for Animation {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "anim"

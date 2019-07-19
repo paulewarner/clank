@@ -16,7 +16,7 @@ use specs::prelude::*;
 
 use super::core::{
     Clank, ClankGetter, ClankScriptGetter, ClankSetter, EngineHandle, GameObjectComponent,
-    MyMethods, Scriptable,
+    MethodAdder, Scriptable,
 };
 
 type UpdateScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
@@ -125,7 +125,7 @@ fn load_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
 }
 
 impl Scriptable for Script {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "events"

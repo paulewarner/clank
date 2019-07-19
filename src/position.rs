@@ -1,9 +1,9 @@
-use super::core::{MyMethods, Scriptable};
+use super::core::{MethodAdder, Scriptable};
 
 pub struct Position(f64, f64);
 
 impl Scriptable for Position {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(methods: &mut M) {
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(methods: &mut M) {
         methods.add_method_mut("set", |_context, this, (x, y)| Ok(this.set((x, y))));
 
         methods.add_method("get", |_context, this, ()| Ok(this.get()));

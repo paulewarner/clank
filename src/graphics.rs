@@ -34,7 +34,7 @@ use vulkano_win::VkSurfaceBuild;
 
 use winit::{EventsLoop, Window, WindowBuilder};
 
-use super::core::{GameObjectComponent, MyMethods, Scriptable};
+use super::core::{GameObjectComponent, MethodAdder, Scriptable};
 use super::position::Position;
 
 lazy_static! {
@@ -581,7 +581,7 @@ impl GraphicsSystem {
 }
 
 impl Scriptable for Graphics {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "image"
