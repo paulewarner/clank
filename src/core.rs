@@ -1,5 +1,4 @@
 use std::any::{Any, TypeId};
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
@@ -85,13 +84,10 @@ pub trait MyMethods<'lua, T: Scriptable> {
         A: FromLuaMulti<'lua>,
         R: ToLuaMulti<'lua>,
         F: 'static + Send + FnMut(LuaContext<'lua>, A) -> LuaResult<R>;
-
 }
 
 pub trait Scriptable: Sized + Send + Sync + 'static {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
-        methods: &mut M,
-    );
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(methods: &mut M);
 
     fn name() -> &'static str;
 }
@@ -107,7 +103,9 @@ where
 
 pub type MethodAdder<'a, 'lua, T, M> = _MethodAdder<'a, 'lua, (), T, M>;
 
-impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>> MyMethods<'lua, T> for MethodAdder<'a, 'lua, T, M> {
+impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>>
+    MyMethods<'lua, T> for MethodAdder<'a, 'lua, T, M>
+{
     fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
     where
         S: AsRef<[u8]>,
@@ -236,10 +234,6 @@ impl<T: Scriptable + Send + Sync + 'static> GameObjectComponent<T> {
         }
     }
 
-    // pub fn get(&self) -> Arc<Mutex<T>> {
-    //     self.component.clone()
-    // }
-
     pub fn get(&self) -> std::sync::MutexGuard<'_, T> {
         let s = self.component.lock().expect("Failed to lock mutex");
         s
@@ -273,11 +267,11 @@ impl Clank {
         self
     }
 
-    pub fn get<'a, T: Send + Sync + 'static>(&'a mut self) -> Option<&'a Mutex<T>> {
+    pub fn get<'a, T: Send + Sync + 'static>(&'a mut self) -> Option<std::sync::MutexGuard<'a, T>> {
         self.components
             .get(&TypeId::of::<T>())
             .and_then(|x| x.downcast_ref::<Mutex<T>>())
-            .map(|x| x.borrow())
+            .map(|x| x.lock().expect("Failed to lock mutex"))
     }
 }
 

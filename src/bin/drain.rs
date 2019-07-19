@@ -14,7 +14,15 @@ fn main() {
                 )
                 .unwrap(),
             )
-            .with_component(clank::position::Position::new(0.0, 0.0));
+            .with_component(clank::position::Position::new(0.0, 0.0))
+            .with_component(
+                clank::script::Script::new()
+                    .with_native_update(|_engine, mut clank| {
+                        let mut position = clank.get::<clank::position::Position>().unwrap();
+                        position.set((15.0, 10.0));
+                    })
+                    .build(),
+            );
         world.add(first);
     });
 }

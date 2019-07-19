@@ -581,11 +581,7 @@ impl GraphicsSystem {
 }
 
 impl Scriptable for Graphics {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
-        _methods: &mut M,
-    ) {
-
-    }
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "image"

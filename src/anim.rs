@@ -69,7 +69,10 @@ impl Animation {
     }
 
     pub fn new() -> AnimationBuilder {
-        AnimationBuilder { frames: Vec::new(), id: None }
+        AnimationBuilder {
+            frames: Vec::new(),
+            id: None,
+        }
     }
 
     pub fn total_duration(&self) -> Duration {
@@ -82,11 +85,7 @@ impl Animation {
 }
 
 impl Scriptable for Animation {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
-        _methods: &mut M,
-    ) {
-
-    }
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "anim"
@@ -107,8 +106,8 @@ impl<'a> specs::System<'a> for AnimationSystem {
         for (anim_obj, entity) in (&mut anims, &entities).join() {
             let mut animation = anim_obj.get();
             match animation.choose_frame(now) {
-                    Some(frame) => lazy_update.insert(entity, frame),
-                    None => lazy_update.remove::<GameObjectComponent<Graphics>>(entity),
+                Some(frame) => lazy_update.insert(entity, frame),
+                None => lazy_update.remove::<GameObjectComponent<Graphics>>(entity),
             }
         }
     }

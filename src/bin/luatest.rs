@@ -14,10 +14,10 @@ fn main() {
             )
             .with_component(clank::position::Position::new(0.0, 0.0))
             .with_component(
-            clank::script::Script::new()
-                .with_script_update("scripts/test.lua")
-                .build(),
-        );
+                clank::script::Script::new()
+                    .with_script_update("scripts/test.lua")
+                    .build(),
+            );
         handle.add(clank);
     });
 }

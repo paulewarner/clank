@@ -125,11 +125,7 @@ fn load_file<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
 }
 
 impl Scriptable for Script {
-    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
-        _methods: &mut M,
-    ) {
-
-    }
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(_methods: &mut M) {}
 
     fn name() -> &'static str {
         "events"
