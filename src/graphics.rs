@@ -541,10 +541,8 @@ impl GraphicsSystem {
         );
 
         for (graphics_data, position_data) in (&mut graphics, &positions).join() {
-            let p = graphics_data.get();
-            let mut data = p.lock().unwrap();
-            let p2 = position_data.get();
-            let new_position = p2.lock().unwrap().get();
+            let mut data = graphics_data.get();
+            let new_position = position_data.get().get();
             if data.position != Some(new_position) {
                 data.set_position(new_position, self.device.clone())?;
             }

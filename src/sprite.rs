@@ -49,12 +49,11 @@ impl<'a> System<'a> for SpriteSystem {
     type SystemData = (Read<'a, LazyUpdate>, Entities<'a>, ReadStorage<'a, GameObjectComponent<Sprite>>, ReadStorage<'a, GameObjectComponent<anim::Animation>>);
 
     fn run(&mut self, (lazy, entities, sprites, animations): Self::SystemData) {
-        for (entity, sp) in (&entities, &sprites).join() {
-            let p = sp.get();
-            let sprite = p.lock().expect("Failed to lock sprite");
+        for (entity, sprite_obj) in (&entities, &sprites).join() {
+            let sprite = sprite_obj.get();
             match animations.get(entity) {
                 Some(animation) => {
-                    if Some(animation.get().lock().expect("Failed to lock animation").id()) != sprite.animations.get(&sprite.current).map(|x| x.get().lock().unwrap().id()) {
+                    if Some(animation.get().id()) != sprite.animations.get(&sprite.current).map(|x| x.get().id()) {
                         lazy.insert(entity, sprite.animations.get(&sprite.current).unwrap().clone());
                     }
                 },

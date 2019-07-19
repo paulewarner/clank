@@ -236,8 +236,13 @@ impl<T: Scriptable + Send + Sync + 'static> GameObjectComponent<T> {
         }
     }
 
-    pub fn get(&self) -> Arc<Mutex<T>> {
-        self.component.clone()
+    // pub fn get(&self) -> Arc<Mutex<T>> {
+    //     self.component.clone()
+    // }
+
+    pub fn get(&self) -> std::sync::MutexGuard<'_, T> {
+        let s = self.component.lock().expect("Failed to lock mutex");
+        s
     }
 }
 

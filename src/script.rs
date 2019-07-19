@@ -174,11 +174,10 @@ impl ScriptSystem {
     }
 
     fn run_updates(&mut self, (entities, scripts, lazy): &<ScriptSystem as System>::SystemData) {
-        for (ent, script) in (entities, scripts).join() {
-            let ptr = script.get();
-            let script_ptr = ptr.lock().unwrap();
-            if script_ptr.should_run() {
-                (script_ptr.update)(self, lazy, ent);
+        for (entity, script_obj) in (entities, scripts).join() {
+            let script = script_obj.get();
+            if script.should_run() {
+                (script.update)(self, lazy, entity);
             }
         }
     }
@@ -194,13 +193,12 @@ impl ScriptSystem {
                             input,
                         },
                 } => {
-                    for (entity, script) in (entities, scripts).join() {
+                    for (entity, script_obj) in (entities, scripts).join() {
                         let input = input.clone();
-                        let ptr = script.get();
-                        let script_ptr = ptr.lock().unwrap();
+                        let script = script_obj.get();
 
                         if let Some(keycode) = input.virtual_keycode {
-                            script_ptr
+                            script
                                 .handlers
                                 .get(&(input.state, keycode))
                                 .cloned()

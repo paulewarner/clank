@@ -105,12 +105,10 @@ impl<'a> specs::System<'a> for AnimationSystem {
     fn run(&mut self, (mut anims, entities, lazy_update): Self::SystemData) {
         let now = Instant::now();
         for (anim_obj, entity) in (&mut anims, &entities).join() {
-            match anim_obj.get().lock() {
-                Ok(mut animation) => match animation.choose_frame(now) {
+            let mut animation = anim_obj.get();
+            match animation.choose_frame(now) {
                     Some(frame) => lazy_update.insert(entity, frame),
                     None => lazy_update.remove::<GameObjectComponent<Graphics>>(entity),
-                },
-                Err(e) => error!("Failed to lock mutex: {}", e),
             }
         }
     }
