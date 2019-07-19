@@ -33,9 +33,64 @@ fn setup_logger() -> Result<(), fern::InitError> {
     Ok(())
 }
 
+pub trait MyMethods<'lua, T: Scriptable> {
+    fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
+    where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &T, A) -> LuaResult<R>;
+
+    fn add_method_mut<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
+    where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &mut T, A) -> LuaResult<R>;
+
+    fn add_function<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Fn(LuaContext<'lua>, A) -> LuaResult<R>;
+
+    fn add_function_mut<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
+    where
+        S: AsRef<[u8]>,
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + FnMut(LuaContext<'lua>, A) -> LuaResult<R>;
+
+    fn add_meta_method<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
+    where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &T, A) -> LuaResult<R>;
+
+    fn add_meta_method_mut<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
+    where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Sync + Fn(LuaContext<'lua>, &mut T, A) -> LuaResult<R>;
+
+    fn add_meta_function<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
+    where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + Fn(LuaContext<'lua>, A) -> LuaResult<R>;
+
+    fn add_meta_function_mut<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
+    where
+        A: FromLuaMulti<'lua>,
+        R: ToLuaMulti<'lua>,
+        F: 'static + Send + FnMut(LuaContext<'lua>, A) -> LuaResult<R>;
+
+}
+
 pub trait Scriptable: Sized + Send + Sync + 'static {
-    fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
-        methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
+        methods: &mut M,
     );
 
     fn name() -> &'static str;
@@ -52,10 +107,8 @@ where
 
 pub type MethodAdder<'a, 'lua, T, M> = _MethodAdder<'a, 'lua, (), T, M>;
 
-impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>>
-    MethodAdder<'a, 'lua, T, M>
-{
-    pub fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
+impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>>> MyMethods<'lua, T> for MethodAdder<'a, 'lua, T, M> {
+    fn add_method<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
     where
         S: AsRef<[u8]>,
         A: FromLuaMulti<'lua>,
@@ -68,7 +121,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
         })
     }
 
-    pub fn add_method_mut<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
+    fn add_method_mut<S: ?Sized, A, R, F>(&mut self, name: &S, method: F)
     where
         S: AsRef<[u8]>,
         A: FromLuaMulti<'lua>,
@@ -82,7 +135,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
             })
     }
 
-    pub fn add_function<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
+    fn add_function<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
     where
         S: AsRef<[u8]>,
         A: FromLuaMulti<'lua>,
@@ -92,7 +145,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
         self.methods.add_function(name, function)
     }
 
-    pub fn add_function_mut<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
+    fn add_function_mut<S: ?Sized, A, R, F>(&mut self, name: &S, function: F)
     where
         S: AsRef<[u8]>,
         A: FromLuaMulti<'lua>,
@@ -102,7 +155,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
         self.methods.add_function_mut(name, function)
     }
 
-    pub fn add_meta_method<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
+    fn add_meta_method<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
     where
         A: FromLuaMulti<'lua>,
         R: ToLuaMulti<'lua>,
@@ -115,7 +168,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
             })
     }
 
-    pub fn add_meta_method_mut<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
+    fn add_meta_method_mut<A, R, F>(&mut self, meta: LuaMetaMethod, method: F)
     where
         A: FromLuaMulti<'lua>,
         R: ToLuaMulti<'lua>,
@@ -128,7 +181,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
             })
     }
 
-    pub fn add_meta_function<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
+    fn add_meta_function<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
     where
         A: FromLuaMulti<'lua>,
         R: ToLuaMulti<'lua>,
@@ -137,7 +190,7 @@ impl<'a, 'lua, T: Scriptable, M: LuaUserDataMethods<'lua, GameObjectComponent<T>
         self.methods.add_meta_function(meta, function)
     }
 
-    pub fn add_meta_function_mut<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
+    fn add_meta_function_mut<A, R, F>(&mut self, meta: LuaMetaMethod, function: F)
     where
         A: FromLuaMulti<'lua>,
         R: ToLuaMulti<'lua>,

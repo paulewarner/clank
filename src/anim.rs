@@ -1,11 +1,10 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use rlua::prelude::*;
 use specs::prelude::*;
 
 use super::core::GameObjectComponent;
-use super::core::MethodAdder;
+use super::core::MyMethods;
 use super::core::Scriptable;
 use super::graphics::Graphics;
 
@@ -83,8 +82,8 @@ impl Animation {
 }
 
 impl Scriptable for Animation {
-    fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
-        _methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
+        _methods: &mut M,
     ) {
 
     }

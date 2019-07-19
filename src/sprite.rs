@@ -7,11 +7,10 @@ use std::sync::Mutex;
 use serde::Deserialize;
 use image::{DynamicImage, GenericImageView};
 use specs::prelude::*;
-use rlua::prelude::*;
 
 use super::anim;
 use super::graphics;
-use super::core::{GameObjectComponent, Scriptable, MethodAdder};
+use super::core::{GameObjectComponent, Scriptable, MyMethods};
 
 pub struct SpriteSystem {
     config: SpriteConfig
@@ -123,8 +122,8 @@ impl Scriptable for Sprite {
         "sprite"
     }
 
-    fn add_methods<'a, 'lua, M: LuaUserDataMethods<'lua, GameObjectComponent<Self>>>(
-        _methods: &'a mut MethodAdder<'a, 'lua, Self, M>,
+    fn add_methods<'lua, M: MyMethods<'lua, Self>>(
+        _methods: &mut M,
     ) {
 
     }
