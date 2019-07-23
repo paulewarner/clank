@@ -329,7 +329,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
 
         let mut dispatcher = self.dispatcher.with(event_system, "events", &[]).build();
 
-        dispatcher.setup(&mut self.world.res);
+        dispatcher.setup(&mut self.world);
 
         let mut done = false;
 
@@ -346,7 +346,7 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
         loop {
             let last_frame = Instant::now();
 
-            dispatcher.dispatch(&mut self.world.res);
+            dispatcher.dispatch(&mut self.world);
 
             self.world.maintain();
 
