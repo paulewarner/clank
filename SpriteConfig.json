@@ -1,0 +1,16 @@
+{
+    "types": {
+        "character": {
+            "sprite_width": 16,
+            "sprite_height": 16,
+            "animation_info": {
+                "idle_forward": [
+                    {
+                        "frame_run": { "secs": 1, "nanos": 0 },
+                        "sprite_number": 21
+                    }
+                ]
+            }
+        }
+    }
+}

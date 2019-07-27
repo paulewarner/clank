@@ -12,9 +12,7 @@ use super::anim;
 use super::core::{GameObjectComponent, MethodAdder, Scriptable};
 use super::graphics;
 
-pub struct SpriteSystem {
-    config: SpriteConfig,
-}
+pub struct SpriteSystem;
 
 #[derive(Debug)]
 struct NoSpriteTypeFound {
@@ -30,25 +28,8 @@ impl std::fmt::Display for NoSpriteTypeFound {
 impl std::error::Error for NoSpriteTypeFound {}
 
 impl SpriteSystem {
-    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Result<SpriteSystem, Box<Error>> {
-        Ok(SpriteSystem {
-            config: serde_json::from_reader(BufReader::new(File::open(path)?))?,
-        })
-    }
-
-    pub fn create_sprite<P: AsRef<std::path::Path>>(
-        &self,
-        path: P,
-        format: image::ImageFormat,
-        sprite_type: String,
-        default: String,
-    ) -> Result<Sprite, Box<Error>> {
-        let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
-        self.config
-            .types
-            .get(&sprite_type)
-            .map(|sprite_type_info| sprite_type_info.create_sprite(sprite_sheet, default))
-            .ok_or(Box::new(NoSpriteTypeFound { sprite_type }))
+    pub fn new() -> SpriteSystem {
+        SpriteSystem {}
     }
 }
 
@@ -62,30 +43,50 @@ impl<'a> System<'a> for SpriteSystem {
 
     fn run(&mut self, (lazy, entities, sprites, animations): Self::SystemData) {
         for (entity, sprite_obj) in (&entities, &sprites).join() {
+            let animation_id = animations.get(entity).map(|x| x.get().id());
             let sprite = sprite_obj.get();
-            match animations.get(entity) {
-                Some(animation) => {
-                    if Some(animation.get().id())
-                        != sprite.animations.get(&sprite.current).map(|x| x.get().id())
-                    {
-                        lazy.insert(
-                            entity,
-                            sprite.animations.get(&sprite.current).unwrap().clone(),
-                        );
+            match sprite.animations.get(&sprite.current) {
+                Some(new_animation) => match animation_id {
+                    Some(id) => {
+                        if id != new_animation.get().id() {
+                            lazy.insert(entity, new_animation.clone());
+                        }
                     }
-                }
+                    None => lazy.insert(entity, new_animation.clone()),
+                },
                 None => {
                     lazy.remove::<GameObjectComponent<anim::Animation>>(entity);
                     lazy.remove::<GameObjectComponent<graphics::Graphics>>(entity);
                 }
             }
+            trace!("Finished!");
         }
     }
 }
 
 #[derive(Deserialize)]
-struct SpriteConfig {
+pub struct SpriteConfig {
     types: HashMap<String, SpriteTypeInfo>,
+}
+
+impl SpriteConfig {
+    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
+        &self,
+        path: P,
+        format: image::ImageFormat,
+        sprite_type: S1,
+        default: S2,
+    ) -> Result<Sprite, Box<Error>> {
+        let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
+        self.types
+            .get(sprite_type.as_ref())
+            .map(|sprite_type_info| {
+                sprite_type_info.create_sprite(sprite_sheet, String::from(default.as_ref()))
+            })
+            .ok_or(Box::new(NoSpriteTypeFound {
+                sprite_type: String::from(sprite_type.as_ref()),
+            }))
+    }
 }
 
 #[derive(Deserialize)]
@@ -128,8 +129,8 @@ impl SpriteTypeInfo {
     fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {
         let (width, height) = sprite_sheet.dimensions();
         let (x, y) = (
-            (index % self.sprite_width) * width,
-            (index % self.sprite_height) * height,
+            (index * width) % self.sprite_width,
+            (index * height) % self.sprite_height,
         );
         sprite_sheet.crop(x, y, self.sprite_width, self.sprite_height)
     }

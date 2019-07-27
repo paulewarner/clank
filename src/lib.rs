@@ -16,6 +16,8 @@ extern crate vulkano_shaders;
 extern crate vulkano_win;
 extern crate winit;
 
+use std::fs::File;
+use std::io::BufReader;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -30,28 +32,33 @@ pub mod position;
 pub mod script;
 pub mod sprite;
 
-pub fn assemble<'a, 'b>() -> core::ClankEngine<'a, 'b> {
+pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<std::error::Error>> {
     let world = World::new();
     let events_loop = EventsLoop::new();
 
     let swapchain_flag = Arc::new(AtomicBool::new(false));
 
-    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone())
-        .map_err(|e| error!("Failed to initalize graphics subsystem: {}", e))
-        .expect("Failed to create graphics subsystem");
+    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone())?;
 
     let dispatcher = DispatcherBuilder::new();
 
     let mut engine = core::ClankEngine::new(world, dispatcher, swapchain_flag, events_loop);
 
+    let config: sprite::SpriteConfig =
+        serde_json::from_reader(BufReader::new(File::open("SpriteConfig.json")?))?;
+
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
     engine.register::<anim::Animation>();
     engine.register::<position::Position>();
+    engine.register::<sprite::Sprite>();
 
-    engine
-        .register_system(graphics_system, "graphics", &[])
-        .register_system(anim::AnimationSystem, "animation", &["graphics"])
+    engine.insert(config);
+
+    Ok(engine
+        .register_system(sprite::SpriteSystem, "sprite", &[])
+        .register_system(anim::AnimationSystem, "animation", &["sprite"])
+        .register_system(graphics_system, "graphics", &["animation"]))
 }
 
 pub fn new() -> core::Clank {

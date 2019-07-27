@@ -13,7 +13,7 @@
 
 
 # Sprites
-Move sprite creation logic to resource, accessible to scripting APIs
+Add sprite scaling effects and API
 
 # New Systems
 * Add tile renderer for maps

@@ -382,6 +382,10 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
         }
     }
 
+    pub fn insert<T: Send + Sync + 'static>(&mut self, resource: T) {
+        self.world.insert(resource);
+    }
+
     pub fn register<T: Scriptable + Send + Sync + 'static>(&mut self) {
         self.world.register::<GameObjectComponent<T>>();
         self.setters.insert(
@@ -472,5 +476,13 @@ impl<'a> EngineHandle<'a> {
             clank = getter(clank, self.world, entity);
         }
         clank
+    }
+
+    pub fn fetch<T: Send + Sync + 'static>(&mut self) -> Option<&mut T> {
+        self.world.get_mut()
+    }
+
+    pub fn insert<T: Send + Sync + 'static>(&mut self, resource: T) {
+        self.world.insert(resource);
     }
 }
