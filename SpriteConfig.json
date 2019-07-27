@@ -1,8 +1,9 @@
 {
     "types": {
         "character": {
-            "sprite_width": 16,
-            "sprite_height": 16,
+            "sprite_width": 24,
+            "sprite_height": 24,
+            "default_scale": 20.0,
             "animation_info": {
                 "idle_forward": [
                     {

@@ -13,7 +13,8 @@ fn main() {
                     clank::script::Script::new()
                         .with_native_update(|_engine, mut clank| {
                             let mut position = clank.get::<clank::position::Position>().unwrap();
-                            position.set((15.0, 10.0));
+                            let (x, y) = position.get();
+                            position.set((x + 1.0, y + 1.0));
                         })
                         .build(),
                 );

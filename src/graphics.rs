@@ -55,14 +55,18 @@ pub struct Graphics {
 }
 
 impl Graphics {
-    pub fn from_image(image: DynamicImage) -> Graphics {
+    pub fn from_image_with_scale(image: DynamicImage, scale: f64) -> Graphics {
         Graphics {
             image: image.to_rgba(),
             position: None,
-            scale: 1.0,
+            scale: scale,
             vertex_buffer: None,
             texture_buffer: None,
         }
+    }
+
+    pub fn from_image(image: DynamicImage) -> Graphics {
+        Graphics::from_image_with_scale(image, 1.0)
     }
 
     pub fn load<P: AsRef<std::path::Path>>(

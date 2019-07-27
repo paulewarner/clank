@@ -70,22 +70,31 @@ pub struct SpriteConfig {
 }
 
 impl SpriteConfig {
-    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
+    fn create_sprite_inner<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
         &self,
         path: P,
         format: image::ImageFormat,
         sprite_type: S1,
         default: S2,
+        scale: Option<f64>,
     ) -> Result<Sprite, Box<Error>> {
         let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
         self.types
             .get(sprite_type.as_ref())
             .map(|sprite_type_info| {
-                sprite_type_info.create_sprite(sprite_sheet, String::from(default.as_ref()))
+                sprite_type_info.create_sprite(sprite_sheet, String::from(default.as_ref()), scale.unwrap_or(sprite_type_info.default_scale))
             })
             .ok_or(Box::new(NoSpriteTypeFound {
                 sprite_type: String::from(sprite_type.as_ref()),
             }))
+    }
+
+    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f64) -> Result<Sprite, Box<Error>> {
+        self.create_sprite_inner(path, format, sprite_type, default, Some(scale))
+    }
+
+    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2) -> Result<Sprite, Box<Error>> {
+        self.create_sprite_inner(path, format, sprite_type, default, None)
     }
 }
 
@@ -93,11 +102,12 @@ impl SpriteConfig {
 struct SpriteTypeInfo {
     sprite_width: u32,
     sprite_height: u32,
+    default_scale: f64,
     animation_info: HashMap<String, Vec<AnimationInfo>>,
 }
 
 impl SpriteTypeInfo {
-    fn create_sprite(&self, mut sprite_sheet: DynamicImage, default: String) -> Sprite {
+    fn create_sprite(&self, mut sprite_sheet: DynamicImage, default: String, scale: f64) -> Sprite {
         let animations: HashMap<String, GameObjectComponent<anim::Animation>> = self
             .animation_info
             .clone()
@@ -108,8 +118,9 @@ impl SpriteTypeInfo {
                 for frame in animation {
                     builder = builder.add_frame(
                         frame.frame_run,
-                        graphics::Graphics::from_image(
+                        graphics::Graphics::from_image_with_scale(
                             self.get_image_by_index(&mut sprite_sheet, frame.sprite_number),
+                            scale,
                         ),
                     );
                 }
@@ -128,9 +139,11 @@ impl SpriteTypeInfo {
 
     fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {
         let (width, height) = sprite_sheet.dimensions();
+        let sheet_width = width/self.sprite_width;
+        let sheet_height = height/self.sprite_height;
         let (x, y) = (
-            (index * width) % self.sprite_width,
-            (index * height) % self.sprite_height,
+            (index % sheet_width) * self.sprite_width,
+            (index / sheet_width) * self.sprite_height,
         );
         sprite_sheet.crop(x, y, self.sprite_width, self.sprite_height)
     }

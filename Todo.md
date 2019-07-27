@@ -11,10 +11,6 @@
 * Add timers, both native and lua
 * Still need to consider how to group/select scripts in lua
 
-
-# Sprites
-Add sprite scaling effects and API
-
 # New Systems
 * Add tile renderer for maps
 * Add AI system
