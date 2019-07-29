@@ -138,9 +138,8 @@ impl SpriteTypeInfo {
     }
 
     fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {
-        let (width, height) = sprite_sheet.dimensions();
+        let (width, _) = sprite_sheet.dimensions();
         let sheet_width = width/self.sprite_width;
-        let sheet_height = height/self.sprite_height;
         let (x, y) = (
             (index % sheet_width) * self.sprite_width,
             (index / sheet_width) * self.sprite_height,

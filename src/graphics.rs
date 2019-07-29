@@ -175,9 +175,7 @@ impl Graphics {
                         x + bounding_box.min.x as u32,
                         y + bounding_box.min.y as u32,
                         // Turn the coverage into an alpha value
-                        Rgba {
-                            data: [color.0, color.1, color.2, (v * 255.0) as u8],
-                        },
+                        Rgba ([color.0, color.1, color.2, (v * 255.0) as u8],),
                     )
                 });
             }
@@ -312,7 +310,7 @@ impl Graphics {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 struct Vertex {
     position: [f32; 4],
 }

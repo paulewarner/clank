@@ -2,22 +2,12 @@ fn main() {
     clank::assemble()
         .expect("Failed to initialize clank")
         .run(|mut world| {
-            let sprite_builder = world.fetch::<clank::sprite::SpriteConfig>().unwrap();
-            let sprite = sprite_builder
-                .create_sprite("image3.png", image::PNG, "character", "idle_forward")
-                .unwrap();
+            let anim = clank::anim::Animation::new()
+                .add_frame(std::time::Duration::from_secs(1), clank::graphics::Graphics::load_with_scale("image.png", image::PNG, 2.0).unwrap())
+                .build();
             let first = clank::new()
-                .with_component(sprite)
-                .with_component(clank::position::Position::new(0.0, 0.0))
-                .with_component(
-                    clank::script::Script::new()
-                        .with_native_update(|_engine, mut clank| {
-                            let mut position = clank.get::<clank::position::Position>().unwrap();
-                            let (x, y) = position.get();
-                            position.set((x + 1.0, y + 1.0));
-                        })
-                        .build(),
-                );
+                .with_component(anim)
+                .with_component(clank::position::Position::new(0.0, 0.0));
             world.add(first);
         });
 }
