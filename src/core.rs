@@ -241,7 +241,7 @@ impl<T: Scriptable + Send + Sync + 'static> GameObjectComponent<T> {
 }
 
 pub struct Clank {
-    pub components: HashMap<TypeId, Arc<Any + Send + Sync + 'static>>,
+    pub components: HashMap<TypeId, Arc<dyn Any + Send + Sync + 'static>>,
     entity: Option<Entity>,
 }
 
@@ -279,13 +279,13 @@ const FPS_CAP: u128 = 60;
 const SCREEN_TICKS_PER_FRAME: u128 = 1000 / FPS_CAP;
 
 pub type ClankSetter =
-    for<'g> Fn(EntityBuilder<'g>, Arc<Any + Send + Sync + 'static>) -> EntityBuilder<'g>
+    dyn for<'g> Fn(EntityBuilder<'g>, Arc<dyn Any + Send + Sync + 'static>) -> EntityBuilder<'g>
         + Send
         + Sync;
-pub type ClankGetter = Fn(Clank, &World, Entity) -> Clank + Send + Sync;
+pub type ClankGetter = dyn Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 
 pub type ClankScriptGetter =
-    for<'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
+    dyn for<'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
 
 pub struct ClankEngine<'a, 'b> {
     world: World,

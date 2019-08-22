@@ -32,7 +32,7 @@ pub mod position;
 pub mod script;
 pub mod sprite;
 
-pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<std::error::Error>> {
+pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::error::Error>> {
     let world = World::new();
     let events_loop = EventsLoop::new();
 

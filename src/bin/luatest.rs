@@ -7,8 +7,8 @@ fn main() {
                     clank::graphics::Graphics::load_with_crop(
                         "image.png",
                         image::ImageFormat::PNG,
-                        0,
-                        25,
+                        0.0,
+                        25.0,
                         150,
                         150,
                     )

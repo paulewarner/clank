@@ -19,7 +19,7 @@ use super::core::{
     MethodAdder, Scriptable,
 };
 
-type UpdateScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
+type UpdateScript = dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
 
 // type HandlerScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
 
@@ -27,7 +27,7 @@ pub struct Script {
     update: Arc<UpdateScript>,
     handlers: HashMap<
         (winit::ElementState, VirtualKeyCode),
-        Arc<Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
+        Arc<dyn Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
     >,
 }
 
@@ -52,7 +52,7 @@ pub struct ScriptBuilder {
     update: Arc<UpdateScript>,
     handlers: HashMap<
         (winit::ElementState, VirtualKeyCode),
-        Arc<Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
+        Arc<dyn Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
     >,
 }
 

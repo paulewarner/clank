@@ -77,7 +77,7 @@ impl SpriteConfig {
         sprite_type: S1,
         default: S2,
         scale: Option<f64>,
-    ) -> Result<Sprite, Box<Error>> {
+    ) -> Result<Sprite, Box<dyn Error>> {
         let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
         self.types
             .get(sprite_type.as_ref())
@@ -89,11 +89,11 @@ impl SpriteConfig {
             }))
     }
 
-    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f64) -> Result<Sprite, Box<Error>> {
+    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f64) -> Result<Sprite, Box<dyn Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, Some(scale))
     }
 
-    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2) -> Result<Sprite, Box<Error>> {
+    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2) -> Result<Sprite, Box<dyn Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, None)
     }
 }

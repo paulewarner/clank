@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
-use image::{DynamicImage, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView};
 
 pub use image::ImageFormat;
 
@@ -51,17 +51,22 @@ pub struct Graphics {
     position: Option<(f64, f64)>,
     scale: f64,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
-    texture_buffer: Option<Arc<DescriptorSet + Send + Sync>>,
+    texture_buffer: Option<Arc<dyn DescriptorSet + Send + Sync>>,
+    texture_position: (f64, f64),
+    texture_size: (f64, f64),
 }
 
 impl Graphics {
     pub fn from_image_with_scale(image: DynamicImage, scale: f64) -> Graphics {
+        let (width, height) = image.dimensions();
         Graphics {
             image: image.to_rgba(),
             position: None,
             scale: scale,
             vertex_buffer: None,
             texture_buffer: None,
+            texture_position: (0.0, 0.0),
+            texture_size: (width as f64, height as f64),
         }
     }
 
@@ -79,8 +84,8 @@ impl Graphics {
     pub fn load_with_crop<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        x: u32,
-        y: u32,
+        x: f64,
+        y: f64,
         width: u32,
         height: u32,
     ) -> std::io::Result<Graphics> {
@@ -93,6 +98,7 @@ impl Graphics {
         scale: f64,
     ) -> std::io::Result<Graphics> {
         let image = image::load(load_file(path)?, format).unwrap().to_rgba();
+        let (width, height) = image.dimensions();
 
         Ok(Graphics {
             image: image,
@@ -100,6 +106,8 @@ impl Graphics {
             scale: scale,
             vertex_buffer: None,
             texture_buffer: None,
+            texture_position: (0.0, 0.0),
+            texture_size: (width as f64, height as f64),
         })
     }
 
@@ -107,15 +115,12 @@ impl Graphics {
         path: P,
         format: ImageFormat,
         scale: f64,
-        x: u32,
-        y: u32,
+        x: f64,
+        y: f64,
         width: u32,
         height: u32,
     ) -> std::io::Result<Graphics> {
-        let image = image::load(load_file(path)?, format)
-            .unwrap()
-            .crop(x, y, width, height)
-            .to_rgba();
+        let image = image::load(load_file(path)?, format).unwrap().to_rgba();
 
         Ok(Graphics {
             image: image,
@@ -123,6 +128,8 @@ impl Graphics {
             scale: scale,
             vertex_buffer: None,
             texture_buffer: None,
+            texture_position: (x, y),
+            texture_size: (width as f64, height as f64),
         })
     }
 
@@ -181,12 +188,16 @@ impl Graphics {
             }
         }
 
+        let (width, height) = image.dimensions();
+
         Graphics {
             image: image,
             position: None,
             scale: 1.0,
             vertex_buffer: None,
             texture_buffer: None,
+            texture_position: (0.0, 0.0),
+            texture_size: (width as f64, height as f64),
         }
     }
 
@@ -195,11 +206,12 @@ impl Graphics {
         (width, height): (f64, f64),
         (window_width, window_height): (f64, f64),
         (x, y): (f64, f64),
+        scale: f64,
     ) -> (f32, f32, f32, f32) {
-        let lower_x = ((x - width / 2.0) / window_width * self.scale) as f32;
-        let upper_x = ((x + width / 2.0) / window_width * self.scale) as f32;
-        let lower_y = ((y - height / 2.0) / window_height * self.scale) as f32;
-        let upper_y = ((y + height / 2.0) / window_height * self.scale) as f32;
+        let lower_x = ((x - width / 2.0) / window_width * scale) as f32;
+        let upper_x = ((x + width / 2.0) / window_width * scale) as f32;
+        let lower_y = ((y - height / 2.0) / window_height * scale) as f32;
+        let upper_y = ((y + height / 2.0) / window_height *  scale) as f32;
         (lower_x, upper_x, lower_y, upper_y)
     }
 
@@ -213,23 +225,25 @@ impl Graphics {
         let viewport = VIEWPORT_SIZE.lock().unwrap().clone();
         let window_dimensions = (viewport.0 as f64, viewport.1 as f64);
         let (lower_x, upper_x, lower_y, upper_y) =
-            self.create_vertexes_for_position(dimensions, window_dimensions, position);
+            self.create_vertexes_for_position(dimensions, window_dimensions, position, self.scale);
+
+        let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) = self.create_vertexes_for_position(self.texture_size, dimensions, self.texture_position, 1.0);
 
         let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             device,
             BufferUsage::all(),
             [
                 Vertex {
-                    position: [lower_x, lower_y, 0.0, 0.0],
+                    position: [lower_x, lower_y, t_lower_x, t_lower_y],
                 },
                 Vertex {
-                    position: [upper_x, lower_y, 1.0, 0.0],
+                    position: [upper_x, lower_y, t_upper_y, t_lower_y],
                 },
                 Vertex {
-                    position: [lower_x, upper_y, 0.0, 1.0],
+                    position: [lower_x, upper_y, t_lower_x, t_upper_y],
                 },
                 Vertex {
-                    position: [upper_x, upper_y, 1.0, 1.0],
+                    position: [upper_x, upper_y, t_upper_x, t_upper_y],
                 },
             ]
             .iter()
@@ -243,10 +257,10 @@ impl Graphics {
         graphics: &GraphicsSystem,
     ) -> Result<
         (
-            Arc<DescriptorSet + Send + Sync>,
-            Box<GpuFuture + Send + Sync>,
+            Arc<dyn DescriptorSet + Send + Sync>,
+            Box<dyn GpuFuture + Send + Sync>,
         ),
-        Box<Error>,
+        Box<dyn Error>,
     > {
         let dimensions = self.image.dimensions();
         let image_dimensions = (dimensions.0 as f64, dimensions.1 as f64);
@@ -279,7 +293,7 @@ impl Graphics {
         &mut self,
         (new_x, new_y): (f64, f64),
         device: Arc<Device>,
-    ) -> Result<(), Box<Error>> {
+    ) -> Result<(), Box<dyn Error>> {
         let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
         match self.position {
             Some((old_x, old_y)) => {
@@ -322,7 +336,7 @@ impl Component for Graphics {
 
 pub struct GraphicsSystem {
     recreate_swapchain: Arc<AtomicBool>,
-    previous_frame_end: Box<GpuFuture + Send + Sync>,
+    previous_frame_end: Box<dyn GpuFuture + Send + Sync>,
     surface: Arc<Surface<Window>>,
     swapchain: Arc<Swapchain<Window>>,
     queue: Arc<Queue>,
@@ -336,9 +350,9 @@ pub struct GraphicsSystem {
             Arc<dyn RenderPassAbstract + Send + Sync>,
         >,
     >,
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     descriptor_pool: Arc<
-        Mutex<FixedSizeDescriptorSetsPool<Arc<PipelineLayoutAbstract + Send + Sync + 'static>>>,
+        Mutex<FixedSizeDescriptorSetsPool<Arc<dyn PipelineLayoutAbstract + Send + Sync + 'static>>>,
     >,
     sampler: Arc<Sampler>,
 }
@@ -369,7 +383,7 @@ impl GraphicsSystem {
     pub fn new(
         events_loop: &EventsLoop,
         swaphchain_flag: Arc<AtomicBool>,
-    ) -> Result<GraphicsSystem, Box<std::error::Error>> {
+    ) -> Result<GraphicsSystem, Box<dyn std::error::Error>> {
         // The start of this example is exactly the same as `triangle`. You should read the
         // `triangle` example if you haven't done so yet.
 
@@ -487,7 +501,7 @@ impl GraphicsSystem {
                 .blend_alpha_blending()
                 .render_pass(
                     Subpass::from(
-                        render_pass.clone() as Arc<RenderPassAbstract + Send + Sync>,
+                        render_pass.clone() as Arc<dyn RenderPassAbstract + Send + Sync>,
                         0,
                     )
                     .ok_or(NoneError)?,
@@ -504,7 +518,7 @@ impl GraphicsSystem {
             window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
         let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(
-            pipeline.clone() as Arc<PipelineLayoutAbstract + Send + Sync>,
+            pipeline.clone() as Arc<dyn PipelineLayoutAbstract + Send + Sync>,
             0,
         )));
 
@@ -529,7 +543,7 @@ impl GraphicsSystem {
         mut graphics: WriteStorage<'a, GameObjectComponent<Graphics>>,
         positions: ReadStorage<'a, GameObjectComponent<Position>>,
         image_num: usize,
-    ) -> Result<(AutoCommandBuffer, Box<GpuFuture + Send + Sync>), Box<std::error::Error>> {
+    ) -> Result<(AutoCommandBuffer, Box<dyn GpuFuture + Send + Sync>), Box<dyn std::error::Error>> {
         let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
         let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
@@ -681,9 +695,9 @@ impl<'a> System<'a> for GraphicsSystem {
 /// This method is called once during initialization, then again whenever the window is resized
 fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage<Window>>],
-    render_pass: Arc<RenderPassAbstract + Send + Sync>,
+    render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: &mut DynamicState,
-) -> Vec<Arc<FramebufferAbstract + Send + Sync>> {
+) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
     let dimensions = images[0].dimensions();
 
     let viewport = Viewport {
@@ -702,7 +716,7 @@ fn window_size_dependent_setup(
                     .unwrap()
                     .build()
                     .unwrap(),
-            ) as Arc<FramebufferAbstract + Send + Sync>
+            ) as Arc<dyn FramebufferAbstract + Send + Sync>
         })
         .collect::<Vec<_>>()
 }
