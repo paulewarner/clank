@@ -76,7 +76,7 @@ impl SpriteConfig {
         format: image::ImageFormat,
         sprite_type: S1,
         default: S2,
-        scale: Option<f64>,
+        scale: Option<f32>,
     ) -> Result<Sprite, Box<dyn Error>> {
         let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
         self.types
@@ -89,7 +89,7 @@ impl SpriteConfig {
             }))
     }
 
-    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f64) -> Result<Sprite, Box<dyn Error>> {
+    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f32) -> Result<Sprite, Box<dyn Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, Some(scale))
     }
 
@@ -102,12 +102,12 @@ impl SpriteConfig {
 struct SpriteTypeInfo {
     sprite_width: u32,
     sprite_height: u32,
-    default_scale: f64,
+    default_scale: f32,
     animation_info: HashMap<String, Vec<AnimationInfo>>,
 }
 
 impl SpriteTypeInfo {
-    fn create_sprite(&self, mut sprite_sheet: DynamicImage, default: String, scale: f64) -> Sprite {
+    fn create_sprite(&self, mut sprite_sheet: DynamicImage, default: String, scale: f32) -> Sprite {
         let animations: HashMap<String, GameObjectComponent<anim::Animation>> = self
             .animation_info
             .clone()

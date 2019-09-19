@@ -1,5 +1,4 @@
 # Renderer
-* Change how images are cropped to use shaders
 * Add ability to rotate images
 * Add ability to flip images
 * Multi line text support

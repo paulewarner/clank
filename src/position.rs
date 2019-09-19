@@ -1,19 +1,19 @@
 use super::core::{MethodAdder, Scriptable};
 
 #[derive(Debug)]
-pub struct Position(f64, f64);
+pub struct Position(f32, f32);
 
 impl Position {
-    pub fn get(&self) -> (f64, f64) {
+    pub fn get(&self) -> (f32, f32) {
         (self.0, self.1)
     }
 
-    pub fn set(&mut self, (x, y): (f64, f64)) {
+    pub fn set(&mut self, (x, y): (f32, f32)) {
         self.0 = x;
         self.1 = y;
     }
 
-    pub fn new(x: f64, y: f64) -> Position {
+    pub fn new(x: f32, y: f32) -> Position {
         Position(x, y)
     }
 }

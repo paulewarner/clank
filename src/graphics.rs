@@ -45,19 +45,23 @@ fn load_file<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<Fi
     Ok(BufReader::new(File::open(path)?))
 }
 
+fn remap(x: f32, from_lo: f32, from_hi: f32, to_lo: f32, to_hi: f32) -> f32 {
+    to_lo + (x - from_lo)*(to_hi-to_lo)/(from_hi-from_lo)
+}
+
 #[derive(Clone)]
 pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
-    position: Option<(f64, f64)>,
-    scale: f64,
+    position: Option<(f32, f32)>,
+    scale: f32,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     texture_buffer: Option<Arc<dyn DescriptorSet + Send + Sync>>,
-    texture_position: (f64, f64),
-    texture_size: (f64, f64),
+    texture_position: (f32, f32),
+    texture_size: (f32, f32),
 }
 
 impl Graphics {
-    pub fn from_image_with_scale(image: DynamicImage, scale: f64) -> Graphics {
+    pub fn from_image_with_scale(image: DynamicImage, scale: f32) -> Graphics {
         let (width, height) = image.dimensions();
         Graphics {
             image: image.to_rgba(),
@@ -66,7 +70,7 @@ impl Graphics {
             vertex_buffer: None,
             texture_buffer: None,
             texture_position: (0.0, 0.0),
-            texture_size: (width as f64, height as f64),
+            texture_size: (width as f32, height as f32),
         }
     }
 
@@ -84,8 +88,8 @@ impl Graphics {
     pub fn load_with_crop<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        x: f64,
-        y: f64,
+        x: f32,
+        y: f32,
         width: u32,
         height: u32,
     ) -> std::io::Result<Graphics> {
@@ -95,7 +99,7 @@ impl Graphics {
     pub fn load_with_scale<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        scale: f64,
+        scale: f32,
     ) -> std::io::Result<Graphics> {
         let image = image::load(load_file(path)?, format).unwrap().to_rgba();
         let (width, height) = image.dimensions();
@@ -107,16 +111,16 @@ impl Graphics {
             vertex_buffer: None,
             texture_buffer: None,
             texture_position: (0.0, 0.0),
-            texture_size: (width as f64, height as f64),
+            texture_size: (width as f32, height as f32),
         })
     }
 
     pub fn load_with_scale_and_crop<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
-        scale: f64,
-        x: f64,
-        y: f64,
+        scale: f32,
+        x: f32,
+        y: f32,
         width: u32,
         height: u32,
     ) -> std::io::Result<Graphics> {
@@ -129,7 +133,7 @@ impl Graphics {
             vertex_buffer: None,
             texture_buffer: None,
             texture_position: (x, y),
-            texture_size: (width as f64, height as f64),
+            texture_size: (width as f32, height as f32),
         })
     }
 
@@ -197,37 +201,40 @@ impl Graphics {
             vertex_buffer: None,
             texture_buffer: None,
             texture_position: (0.0, 0.0),
-            texture_size: (width as f64, height as f64),
+            texture_size: (width as f32, height as f32),
         }
     }
 
     fn create_vertexes_for_position(
         &self,
-        (width, height): (f64, f64),
-        (window_width, window_height): (f64, f64),
-        (x, y): (f64, f64),
-        scale: f64,
+        (width, height): (f32, f32),
+        (window_width, window_height): (f32, f32),
+        (x, y): (f32, f32),
+        scale: f32,
+        lower_bound: f32,
+        upper_bound: f32,
     ) -> (f32, f32, f32, f32) {
-        let lower_x = ((x - width / 2.0) / window_width * scale) as f32;
-        let upper_x = ((x + width / 2.0) / window_width * scale) as f32;
-        let lower_y = ((y - height / 2.0) / window_height * scale) as f32;
-        let upper_y = ((y + height / 2.0) / window_height *  scale) as f32;
+        let lower_x = remap(x - width / 2.0 * scale, -window_width/2.0, window_width/2.0, lower_bound, upper_bound);
+        let upper_x = remap(x + width / 2.0 * scale, -window_width/2.0, window_width/2.0, lower_bound, upper_bound);
+        let lower_y = remap(y - height / 2.0 * scale, -window_height/2.0, window_height/2.0, lower_bound, upper_bound);
+        let upper_y = remap(y + height / 2.0 * scale, -window_height/2.0, window_height/2.0, lower_bound, upper_bound);
         (lower_x, upper_x, lower_y, upper_y)
     }
 
     fn create_vertex_buffer(
         &self,
-        position: (f64, f64),
+        position: (f32, f32),
         device: Arc<Device>,
     ) -> Result<Arc<CpuAccessibleBuffer<[Vertex]>>, Box<dyn Error>> {
         let reg_dimensions = self.image.dimensions();
-        let dimensions = (reg_dimensions.0 as f64, reg_dimensions.1 as f64);
+        let dimensions = (reg_dimensions.0 as f32, reg_dimensions.1 as f32);
         let viewport = VIEWPORT_SIZE.lock().unwrap().clone();
-        let window_dimensions = (viewport.0 as f64, viewport.1 as f64);
+        let window_dimensions = (viewport.0 as f32, viewport.1 as f32);
+
         let (lower_x, upper_x, lower_y, upper_y) =
-            self.create_vertexes_for_position(dimensions, window_dimensions, position, self.scale);
+            self.create_vertexes_for_position(dimensions, window_dimensions, position, self.scale, -1.0, 1.0);
         let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) =
-            self.create_vertexes_for_position((self.texture_size.0/2.0, self.texture_size.1/2.0), self.texture_size, (3.0*self.texture_size.0/4.0, 3.0*self.texture_size.1/4.0), 1.0);
+            self.create_vertexes_for_position(dimensions, self.texture_size, self.texture_position, 1.0, 0.0, 1.0);
 
         let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             device,
@@ -291,7 +298,7 @@ impl Graphics {
 
     fn set_position(
         &mut self,
-        (new_x, new_y): (f64, f64),
+        (new_x, new_y): (f32, f32),
         device: Arc<Device>,
     ) -> Result<(), Box<dyn Error>> {
         let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
@@ -299,8 +306,8 @@ impl Graphics {
             Some((old_x, old_y)) => {
                 self.position = Some((new_x, new_y));
                 let (delta_x, delta_y) = (
-                    (new_x - old_x) / width as f64,
-                    (new_y - old_y) / height as f64,
+                    (new_x - old_x) / width as f32,
+                    (new_y - old_y) / height as f32,
                 );
                 if let Some(vertex_buffer) = &self.vertex_buffer {
                     match vertex_buffer.write() {
