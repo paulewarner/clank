@@ -226,8 +226,8 @@ impl Graphics {
         let window_dimensions = (viewport.0 as f64, viewport.1 as f64);
         let (lower_x, upper_x, lower_y, upper_y) =
             self.create_vertexes_for_position(dimensions, window_dimensions, position, self.scale);
-
-        let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) = self.create_vertexes_for_position(self.texture_size, dimensions, self.texture_position, 1.0);
+        let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) =
+            self.create_vertexes_for_position((self.texture_size.0/2.0, self.texture_size.1/2.0), self.texture_size, (3.0*self.texture_size.0/4.0, 3.0*self.texture_size.1/4.0), 1.0);
 
         let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             device,
@@ -237,10 +237,10 @@ impl Graphics {
                     position: [lower_x, lower_y, t_lower_x, t_lower_y],
                 },
                 Vertex {
-                    position: [upper_x, lower_y, t_upper_y, t_lower_y],
+                    position: [upper_x, lower_y, t_upper_x, t_lower_y],
                 },
                 Vertex {
-                    position: [lower_x, upper_y, t_lower_x, t_upper_y],
+                    position: [lower_x, upper_y, t_lower_y, t_upper_x],
                 },
                 Vertex {
                     position: [upper_x, upper_y, t_upper_x, t_upper_y],
