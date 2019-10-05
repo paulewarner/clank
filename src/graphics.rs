@@ -60,100 +60,71 @@ pub struct Graphics {
     texture_size: (f32, f32),
 }
 
-impl Graphics {
-    pub fn from_image_with_scale(image: DynamicImage, scale: f32) -> Graphics {
+pub struct GraphicsBuilder {
+    position: Option<(f32, f32)>,
+    size: Option<(f32, f32)>,
+    scale: Option<f32>,
+    rotation: Option<f32>,
+    texture_position: Option<(f32, f32)>,
+    texture_size: Option<(f32, f32)>,
+    image: Option<ImageBuffer<image::Rgba<u8>, Vec<u8>>>,
+    native_size: Option<(f32, f32)>,
+}
+
+impl GraphicsBuilder {
+
+    pub fn position(mut self, x: f32, y: f32) -> Self {
+        self.position = Some((x, y));
+        self
+    }
+
+    pub fn size(mut self, width: f32, height: f32) -> Self {
+        self.size = Some((width, height));
+        self
+    }
+
+    pub fn scale(mut self, scale: f32) -> Self {
+        self.scale = Some(scale);
+        self
+    }
+
+    pub fn rotation(mut self, rotation: f32) -> Self {
+        self.rotation = Some(rotation);
+        self
+    }
+
+    pub fn texture_position(mut self, x: f32, y: f32) -> Self {
+        self.texture_position = Some((x, y));
+        self
+    }
+
+    pub fn texture_size(mut self, width: f32, height: f32) -> Self {
+        self.texture_size = Some((width, height));
+        self
+    }
+
+    pub fn image(mut self, image: DynamicImage) -> Self {
         let (width, height) = image.dimensions();
-        Graphics {
-            image: image.to_rgba(),
-            position: None,
-            scale: scale,
-            vertex_buffer: None,
-            texture_buffer: None,
-            texture_position: (0.0, 0.0),
-            texture_size: (width as f32, height as f32),
-        }
+        self.native_size = Some((width as f32, height as f32));
+        self.image = Some(image.to_rgba());
+        self
     }
 
-    pub fn from_image(image: DynamicImage) -> Graphics {
-        Graphics::from_image_with_scale(image, 1.0)
-    }
-
-    pub fn load<P: AsRef<std::path::Path>>(
-        path: P,
-        format: ImageFormat,
-    ) -> std::io::Result<Graphics> {
-        Graphics::load_with_scale(path, format, 1.0)
-    }
-
-    pub fn load_with_crop<P: AsRef<std::path::Path>>(
-        path: P,
-        format: ImageFormat,
-        x: f32,
-        y: f32,
-        width: u32,
-        height: u32,
-    ) -> std::io::Result<Graphics> {
-        Graphics::load_with_scale_and_crop(path, format, 1.0, x, y, width, height)
-    }
-
-    pub fn load_with_scale<P: AsRef<std::path::Path>>(
-        path: P,
-        format: ImageFormat,
-        scale: f32,
-    ) -> std::io::Result<Graphics> {
+    pub fn load_image<P: AsRef<std::path::Path>>(mut self, path: P, format: ImageFormat) -> std::io::Result<Self> {
         let image = image::load(load_file(path)?, format).unwrap().to_rgba();
         let (width, height) = image.dimensions();
-
-        Ok(Graphics {
-            image: image,
-            position: None,
-            scale: scale,
-            vertex_buffer: None,
-            texture_buffer: None,
-            texture_position: (0.0, 0.0),
-            texture_size: (width as f32, height as f32),
-        })
+        self.native_size = Some((width as f32, height as f32));
+        self.image = Some(image);
+        Ok(self)
     }
 
-    pub fn load_with_scale_and_crop<P: AsRef<std::path::Path>>(
-        path: P,
-        format: ImageFormat,
-        scale: f32,
-        x: f32,
-        y: f32,
-        width: u32,
-        height: u32,
-    ) -> std::io::Result<Graphics> {
-        let image = image::load(load_file(path)?, format).unwrap().to_rgba();
-
-        Ok(Graphics {
-            image: image,
-            position: None,
-            scale: scale,
-            vertex_buffer: None,
-            texture_buffer: None,
-            texture_position: (x, y),
-            texture_size: (width as f32, height as f32),
-        })
-    }
-
-    pub fn load_text_with_font_path<P: AsRef<std::path::Path>>(
-        text: String,
-        font_path: P,
-        color: (u8, u8, u8),
-        size: f32,
-    ) -> std::io::Result<Graphics> {
+    pub fn text_with_font<P: AsRef<std::path::Path>>(mut self, text: String, font: P, color: (u8, u8, u8), size: f32) -> std::io::Result<Self> {
         let mut font_data = Vec::new();
-        load_file(font_path)?.read_to_end(&mut font_data)?;
-        Ok(Graphics::load_text(
-            text,
-            &Font::from_bytes(&font_data).unwrap(),
-            color,
-            size,
-        ))
+        load_file(font)?.read_to_end(&mut font_data)?;
+        Ok(self.text(text, &Font::from_bytes(&font_data).unwrap(), color, size))
     }
 
-    pub fn load_text(text: String, font: &Font, color: (u8, u8, u8), size: f32) -> Graphics {
+    pub fn text(mut self, text: String, font: &Font, color: (u8, u8, u8), size: f32) -> Self {
         let scale = Scale::uniform(size);
         let v_metrics = font.v_metrics(scale);
 
@@ -194,14 +165,36 @@ impl Graphics {
 
         let (width, height) = image.dimensions();
 
+        self.image = Some(image);
+        self.native_size = Some((width as f32, height as f32));
+        self
+    }
+
+    pub fn build(self) -> Graphics {
         Graphics {
-            image: image,
-            position: None,
-            scale: 1.0,
-            vertex_buffer: None,
+            image: self.image.unwrap(),
+            position: self.position,
+            scale: self.scale.unwrap_or(1.0),
+            texture_position: self.texture_position.unwrap_or((0.0, 0.0)),
+            texture_size: self.texture_size.or(self.native_size).unwrap(),
             texture_buffer: None,
-            texture_position: (0.0, 0.0),
-            texture_size: (width as f32, height as f32),
+            vertex_buffer: None,
+        }
+    }
+
+}
+
+impl Graphics {
+    pub fn new() -> GraphicsBuilder {
+        GraphicsBuilder {
+            position: None,
+            size: None,
+            scale: None,
+            rotation: None,
+            texture_position: None,
+            texture_size: None,
+            image: None,
+            native_size: None
         }
     }
 
@@ -241,16 +234,24 @@ impl Graphics {
             BufferUsage::all(),
             [
                 Vertex {
-                    position: [lower_x, lower_y, t_lower_x, t_lower_y],
+                    position: [lower_x, lower_y],
+                    texture: [t_lower_x, t_lower_y],
+                    rotation: 45.0f32.to_radians()
                 },
                 Vertex {
-                    position: [upper_x, lower_y, t_upper_x, t_lower_y],
+                    position: [upper_x, lower_y],
+                    texture: [t_upper_x, t_lower_y],
+                    rotation: 45.0f32.to_radians()
                 },
                 Vertex {
-                    position: [lower_x, upper_y, t_lower_y, t_upper_x],
+                    position: [lower_x, upper_y],
+                    texture: [t_lower_y, t_upper_x],
+                    rotation: 45.0f32.to_radians()
                 },
                 Vertex {
-                    position: [upper_x, upper_y, t_upper_x, t_upper_y],
+                    position: [upper_x, upper_y],
+                    texture: [t_upper_x, t_upper_y],
+                    rotation: 45.0f32.to_radians()
                 },
             ]
             .iter()
@@ -333,9 +334,11 @@ impl Graphics {
 
 #[derive(Default, Debug, Clone)]
 struct Vertex {
-    position: [f32; 4],
+    position: [f32; 2],
+    texture: [f32; 2],
+    rotation: f32,
 }
-vulkano::impl_vertex!(Vertex, position);
+vulkano::impl_vertex!(Vertex, position, texture, rotation);
 
 impl Component for Graphics {
     type Storage = VecStorage<Self>;
@@ -733,11 +736,13 @@ mod vs {
         ty: "vertex",
         src: "
 #version 450
-layout(location = 0) in vec4 position;
+layout(location = 0) in vec2 position;
+layout(location = 1) in vec2 texture;
+layout(location = 2) in float rotation;
 layout(location = 0) out vec2 tex_coords;
 void main() {
-    gl_Position = vec4(vec2(position), 0.0, 1.0);
-    tex_coords = vec2(position[2], position[3]);
+    gl_Position = vec4(position * mat2(cos(rotation), sin(rotation), -sin(rotation), cos(rotation)), 0.0, 1.0);
+    tex_coords = texture;
 }"
     }
 }

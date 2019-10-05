@@ -2,7 +2,6 @@
 * Add ability to rotate images
 * Add ability to flip images
 * Multi line text support
-* Remove graphics creation methods and change them to use builders
 
 # Scripting API
 * Fill out lua APIs for existing systems

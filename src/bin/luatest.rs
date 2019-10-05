@@ -4,15 +4,11 @@ fn main() {
         .run(|mut handle| {
             let clank = clank::new()
                 .with_component(
-                    clank::graphics::Graphics::load_with_crop(
-                        "image.png",
-                        image::ImageFormat::PNG,
-                        0.0,
-                        25.0,
-                        150,
-                        150,
-                    )
-                    .unwrap(),
+                    clank::graphics::Graphics::new()
+                        .load_image("image.png", image::ImageFormat::PNG).unwrap()
+                        .texture_position(0.0, 25.0)
+                        .texture_size(150.0, 150.0)
+                        .build(),
                 )
                 .with_component(clank::position::Position::new(0.0, 0.0))
                 .with_component(

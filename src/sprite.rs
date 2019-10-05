@@ -118,10 +118,10 @@ impl SpriteTypeInfo {
                 for frame in animation {
                     builder = builder.add_frame(
                         frame.frame_run,
-                        graphics::Graphics::from_image_with_scale(
-                            self.get_image_by_index(&mut sprite_sheet, frame.sprite_number),
-                            scale,
-                        ),
+                        graphics::Graphics::new()
+                            .image(self.get_image_by_index(&mut sprite_sheet, frame.sprite_number))
+                            .scale(scale)
+                            .build(),
                     );
                 }
                 (
