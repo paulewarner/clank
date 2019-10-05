@@ -54,6 +54,7 @@ pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
     position: Option<(f32, f32)>,
     scale: f32,
+    rotation: f32,
     vertex_buffer: Option<Arc<CpuAccessibleBuffer<[Vertex]>>>,
     texture_buffer: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture_position: (f32, f32),
@@ -118,7 +119,7 @@ impl GraphicsBuilder {
         Ok(self)
     }
 
-    pub fn text_with_font<P: AsRef<std::path::Path>>(mut self, text: String, font: P, color: (u8, u8, u8), size: f32) -> std::io::Result<Self> {
+    pub fn text_with_font<P: AsRef<std::path::Path>>(self, text: String, font: P, color: (u8, u8, u8), size: f32) -> std::io::Result<Self> {
         let mut font_data = Vec::new();
         load_file(font)?.read_to_end(&mut font_data)?;
         Ok(self.text(text, &Font::from_bytes(&font_data).unwrap(), color, size))
@@ -179,6 +180,7 @@ impl GraphicsBuilder {
             texture_size: self.texture_size.or(self.native_size).unwrap(),
             texture_buffer: None,
             vertex_buffer: None,
+            rotation: self.rotation.unwrap_or(0.0)
         }
     }
 
@@ -236,22 +238,22 @@ impl Graphics {
                 Vertex {
                     position: [lower_x, lower_y],
                     texture: [t_lower_x, t_lower_y],
-                    rotation: 45.0f32.to_radians()
+                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
                     position: [upper_x, lower_y],
                     texture: [t_upper_x, t_lower_y],
-                    rotation: 45.0f32.to_radians()
+                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
                     position: [lower_x, upper_y],
                     texture: [t_lower_y, t_upper_x],
-                    rotation: 45.0f32.to_radians()
+                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
                     position: [upper_x, upper_y],
                     texture: [t_upper_x, t_upper_y],
-                    rotation: 45.0f32.to_radians()
+                    rotation: self.rotation.to_radians()
                 },
             ]
             .iter()

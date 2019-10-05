@@ -3,7 +3,10 @@ fn main() {
         .expect("Failed to initialize clank")
         .run(|mut world| {
             let anim = clank::anim::Animation::new()
-                .add_frame(std::time::Duration::from_secs(1), clank::graphics::Graphics::new().load_image("image.png", image::PNG).unwrap().build())
+                .add_frame(std::time::Duration::from_secs(1), clank::graphics::Graphics::new()
+                    .load_image("image.png", image::PNG).unwrap()
+                    .rotation(45.0)
+                    .build())
                 .build();
             let first = clank::new()
                 .with_component(anim)
