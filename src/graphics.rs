@@ -65,6 +65,32 @@ fn rotation_matrix(angle: f32) -> na::Matrix3<f32> {
                                            0.0,                      0.0, 1.0)
 }
 
+fn flip_matrix(flipped_horizontally: bool, flipped_vertically: bool) -> na::Matrix3<f32> {
+    let x = match flipped_horizontally {
+        true => -1.0,
+        false => 1.0
+    };
+    let y = match flipped_vertically {
+        true => -1.0,
+        false => 1.0
+    };
+    na::Matrix3::new(  x, 0.0, 0.0,
+                     0.0,   y, 0.0,
+                     0.0, 0.0, 1.0)
+}
+
+fn translation_matrix(x: f32, y: f32) -> na::Matrix3<f32> {
+    na::Matrix3::new(1.0, 0.0,      x,
+                     0.0, 1.0,      y,
+                     0.0, 0.0,    1.0)
+}
+
+fn scale_matrix(x_scale: f32, y_scale: f32) -> na::Matrix3<f32> {
+    na::Matrix3::new(x_scale,     0.0, 0.0,
+                         0.0, y_scale, 0.0,
+                         0.0,     0.0, 1.0)
+}
+
 #[derive(Clone)]
 pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
@@ -262,17 +288,23 @@ impl Graphics {
         let (x, y) = position;
         let (width, height) = dimensions;
 
-        let lower_x = x - width / 2.0;
-        let upper_x = x + width / 2.0;
-        let lower_y = y - height / 2.0;
-        let upper_y = y + height / 2.0;
+        let lower_x = - width / 2.0;
+        let upper_x =   width / 2.0;
+        let lower_y = - height / 2.0;
+        let upper_y =   height / 2.0;
 
-        let lower_left = na::Vector3::new(lower_x, lower_y, 0.0);
-        let lower_right = na::Vector3::new(upper_x, lower_y, 0.0);
-        let upper_left = na::Vector3::new(lower_x, upper_y, 0.0);
-        let upper_right = na::Vector3::new(upper_x, upper_y, 0.0);
+        let lower_left = na::Vector3::new(lower_x, lower_y, 1.0);
+        let lower_right = na::Vector3::new(upper_x, lower_y, 1.0);
+        let upper_left = na::Vector3::new(lower_x, upper_y, 1.0);
+        let upper_right = na::Vector3::new(upper_x, upper_y, 1.0);
 
-        let transform = viewport_matrix(viewport_width as f32, viewport_height as f32).try_inverse().expect("unreachable") * rotation_matrix(self.rotation) * self.scale;
+        let flip_matrix = flip_matrix(self.flipped_horizontally, self.flipped_vertically);
+        let viewport_matrix = viewport_matrix(viewport_width as f32, viewport_height as f32).try_inverse().expect("unreachable");
+        let rotation_matrix = rotation_matrix(self.rotation);
+        let translation_matrix = translation_matrix(x, y);
+        let scale_matrix = scale_matrix(self.scale, self.scale);
+
+        let transform = viewport_matrix * translation_matrix * flip_matrix * rotation_matrix * scale_matrix;
 
         let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) =
             self.create_vertexes_for_position(dimensions, self.texture_size, self.texture_position, 1.0, 0.0, 1.0);

@@ -1,5 +1,4 @@
 # Renderer
-* Add ability to flip images
 * Multi line text support
 
 # Scripting API
