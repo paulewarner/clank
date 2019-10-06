@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -11,6 +12,8 @@ use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView};
 pub use image::ImageFormat;
 
 use rusttype::{point, Font, Scale};
+
+use nalgebra as na;
 
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState};
@@ -49,6 +52,19 @@ fn remap(x: f32, from_lo: f32, from_hi: f32, to_lo: f32, to_hi: f32) -> f32 {
     to_lo + (x - from_lo)*(to_hi-to_lo)/(from_hi-from_lo)
 }
 
+fn viewport_matrix(width: f32, height: f32) -> na::Matrix3<f32> {
+    na::Matrix3::new(       width/2.0,        0.0,         0.0,
+                                  0.0, height/2.0,         0.0,
+                    (width - 1.0)/2.0, (height - 1.0)/2.0, 1.0
+                           )
+}
+
+fn rotation_matrix(angle: f32) -> na::Matrix3<f32> {
+    na::Matrix3::new( angle.to_radians().cos(), angle.to_radians().sin(), 0.0,
+                     -angle.to_radians().sin(), angle.to_radians().cos(), 0.0,
+                                           0.0,                      0.0, 1.0)
+}
+
 #[derive(Clone)]
 pub struct Graphics {
     image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
@@ -59,6 +75,8 @@ pub struct Graphics {
     texture_buffer: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture_position: (f32, f32),
     texture_size: (f32, f32),
+    flipped_horizontally: bool,
+    flipped_vertically: bool,
 }
 
 pub struct GraphicsBuilder {
@@ -70,6 +88,8 @@ pub struct GraphicsBuilder {
     texture_size: Option<(f32, f32)>,
     image: Option<ImageBuffer<image::Rgba<u8>, Vec<u8>>>,
     native_size: Option<(f32, f32)>,
+    flipped_horizontally: bool,
+    flipped_vertically: bool,
 }
 
 impl GraphicsBuilder {
@@ -101,6 +121,16 @@ impl GraphicsBuilder {
 
     pub fn texture_size(mut self, width: f32, height: f32) -> Self {
         self.texture_size = Some((width, height));
+        self
+    }
+
+    pub fn flipped_horizontally(mut self) -> Self {
+        self.flipped_horizontally = true;
+        self
+    }
+
+    pub fn flipped_vertically(mut self) -> Self {
+        self.flipped_vertically = true;
         self
     }
 
@@ -180,7 +210,9 @@ impl GraphicsBuilder {
             texture_size: self.texture_size.or(self.native_size).unwrap(),
             texture_buffer: None,
             vertex_buffer: None,
-            rotation: self.rotation.unwrap_or(0.0)
+            rotation: self.rotation.unwrap_or(0.0),
+            flipped_horizontally: self.flipped_horizontally,
+            flipped_vertically: self.flipped_vertically,
         }
     }
 
@@ -196,7 +228,9 @@ impl Graphics {
             texture_position: None,
             texture_size: None,
             image: None,
-            native_size: None
+            native_size: None,
+            flipped_horizontally: false,
+            flipped_vertically: false,
         }
     }
 
@@ -223,11 +257,23 @@ impl Graphics {
     ) -> Result<Arc<CpuAccessibleBuffer<[Vertex]>>, Box<dyn Error>> {
         let reg_dimensions = self.image.dimensions();
         let dimensions = (reg_dimensions.0 as f32, reg_dimensions.1 as f32);
-        let viewport = VIEWPORT_SIZE.lock().unwrap().clone();
-        let window_dimensions = (viewport.0 as f32, viewport.1 as f32);
+        let (viewport_width, viewport_height) = VIEWPORT_SIZE.lock().unwrap().clone();
 
-        let (lower_x, upper_x, lower_y, upper_y) =
-            self.create_vertexes_for_position(dimensions, window_dimensions, position, self.scale, -1.0, 1.0);
+        let (x, y) = position;
+        let (width, height) = dimensions;
+
+        let lower_x = x - width / 2.0;
+        let upper_x = x + width / 2.0;
+        let lower_y = y - height / 2.0;
+        let upper_y = y + height / 2.0;
+
+        let lower_left = na::Vector3::new(lower_x, lower_y, 0.0);
+        let lower_right = na::Vector3::new(upper_x, lower_y, 0.0);
+        let upper_left = na::Vector3::new(lower_x, upper_y, 0.0);
+        let upper_right = na::Vector3::new(upper_x, upper_y, 0.0);
+
+        let transform = viewport_matrix(viewport_width as f32, viewport_height as f32).try_inverse().expect("unreachable") * rotation_matrix(self.rotation) * self.scale;
+
         let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) =
             self.create_vertexes_for_position(dimensions, self.texture_size, self.texture_position, 1.0, 0.0, 1.0);
 
@@ -236,24 +282,20 @@ impl Graphics {
             BufferUsage::all(),
             [
                 Vertex {
-                    position: [lower_x, lower_y],
+                    position: (transform * lower_left).as_slice().try_into().expect("unreached"),
                     texture: [t_lower_x, t_lower_y],
-                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
-                    position: [upper_x, lower_y],
+                    position: (transform * lower_right).as_slice().try_into().expect("unreached"),
                     texture: [t_upper_x, t_lower_y],
-                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
-                    position: [lower_x, upper_y],
+                    position: (transform * upper_left).as_slice().try_into().expect("unreached"),
                     texture: [t_lower_y, t_upper_x],
-                    rotation: self.rotation.to_radians()
                 },
                 Vertex {
-                    position: [upper_x, upper_y],
+                    position: (transform * upper_right).as_slice().try_into().expect("unreached"),
                     texture: [t_upper_x, t_upper_y],
-                    rotation: self.rotation.to_radians()
                 },
             ]
             .iter()
@@ -336,11 +378,10 @@ impl Graphics {
 
 #[derive(Default, Debug, Clone)]
 struct Vertex {
-    position: [f32; 2],
+    position: [f32; 3],
     texture: [f32; 2],
-    rotation: f32,
 }
-vulkano::impl_vertex!(Vertex, position, texture, rotation);
+vulkano::impl_vertex!(Vertex, position, texture);
 
 impl Component for Graphics {
     type Storage = VecStorage<Self>;
@@ -738,12 +779,11 @@ mod vs {
         ty: "vertex",
         src: "
 #version 450
-layout(location = 0) in vec2 position;
+layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 texture;
-layout(location = 2) in float rotation;
 layout(location = 0) out vec2 tex_coords;
 void main() {
-    gl_Position = vec4(position * mat2(cos(rotation), sin(rotation), -sin(rotation), cos(rotation)), 0.0, 1.0);
+    gl_Position = vec4(position[0], position[1], 0.0, 1.0);
     tex_coords = texture;
 }"
     }

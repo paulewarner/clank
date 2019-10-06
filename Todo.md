@@ -14,7 +14,7 @@
 * Add AI system
 
 # Misc
-* Add
+* fix window selection problem
 
 # Refactoring
 * Consider abstracting away GameObjectComponent with a special storage type
