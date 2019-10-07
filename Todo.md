@@ -1,5 +1,4 @@
 # Renderer
-* Multi line text support
 
 # Scripting API
 * Fill out lua APIs for existing systems

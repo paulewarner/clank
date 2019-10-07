@@ -82,18 +82,35 @@ impl SpriteConfig {
         self.types
             .get(sprite_type.as_ref())
             .map(|sprite_type_info| {
-                sprite_type_info.create_sprite(sprite_sheet, String::from(default.as_ref()), scale.unwrap_or(sprite_type_info.default_scale))
+                sprite_type_info.create_sprite(
+                    sprite_sheet,
+                    String::from(default.as_ref()),
+                    scale.unwrap_or(sprite_type_info.default_scale),
+                )
             })
             .ok_or(Box::new(NoSpriteTypeFound {
                 sprite_type: String::from(sprite_type.as_ref()),
             }))
     }
 
-    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2, scale: f32) -> Result<Sprite, Box<dyn Error>> {
+    pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
+        &self,
+        path: P,
+        format: image::ImageFormat,
+        sprite_type: S1,
+        default: S2,
+        scale: f32,
+    ) -> Result<Sprite, Box<dyn Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, Some(scale))
     }
 
-    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(&self, path: P, format: image::ImageFormat, sprite_type: S1, default: S2) -> Result<Sprite, Box<dyn Error>> {
+    pub fn create_sprite<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
+        &self,
+        path: P,
+        format: image::ImageFormat,
+        sprite_type: S1,
+        default: S2,
+    ) -> Result<Sprite, Box<dyn Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, None)
     }
 }
@@ -139,7 +156,7 @@ impl SpriteTypeInfo {
 
     fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {
         let (width, _) = sprite_sheet.dimensions();
-        let sheet_width = width/self.sprite_width;
+        let sheet_width = width / self.sprite_width;
         let (x, y) = (
             (index % sheet_width) * self.sprite_width,
             (index / sheet_width) * self.sprite_height,

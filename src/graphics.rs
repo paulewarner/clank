@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
-use image::{DynamicImage, ImageBuffer, Rgba, GenericImageView};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
 
 pub use image::ImageFormat;
 
@@ -49,46 +49,55 @@ fn load_file<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<Fi
 }
 
 fn remap(x: f32, from_lo: f32, from_hi: f32, to_lo: f32, to_hi: f32) -> f32 {
-    to_lo + (x - from_lo)*(to_hi-to_lo)/(from_hi-from_lo)
+    to_lo + (x - from_lo) * (to_hi - to_lo) / (from_hi - from_lo)
 }
 
 fn viewport_matrix(width: f32, height: f32) -> na::Matrix3<f32> {
-    na::Matrix3::new(       width/2.0,        0.0,         0.0,
-                                  0.0, height/2.0,         0.0,
-                    (width - 1.0)/2.0, (height - 1.0)/2.0, 1.0
-                           )
+    na::Matrix3::new(
+        width / 2.0,
+        0.0,
+        0.0,
+        0.0,
+        height / 2.0,
+        0.0,
+        (width - 1.0) / 2.0,
+        (height - 1.0) / 2.0,
+        1.0,
+    )
 }
 
 fn rotation_matrix(angle: f32) -> na::Matrix3<f32> {
-    na::Matrix3::new( angle.to_radians().cos(), angle.to_radians().sin(), 0.0,
-                     -angle.to_radians().sin(), angle.to_radians().cos(), 0.0,
-                                           0.0,                      0.0, 1.0)
+    na::Matrix3::new(
+        angle.to_radians().cos(),
+        angle.to_radians().sin(),
+        0.0,
+        -angle.to_radians().sin(),
+        angle.to_radians().cos(),
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
 }
 
 fn flip_matrix(flipped_horizontally: bool, flipped_vertically: bool) -> na::Matrix3<f32> {
     let x = match flipped_horizontally {
         true => -1.0,
-        false => 1.0
+        false => 1.0,
     };
     let y = match flipped_vertically {
         true => -1.0,
-        false => 1.0
+        false => 1.0,
     };
-    na::Matrix3::new(  x, 0.0, 0.0,
-                     0.0,   y, 0.0,
-                     0.0, 0.0, 1.0)
+    na::Matrix3::new(x, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 1.0)
 }
 
 fn translation_matrix(x: f32, y: f32) -> na::Matrix3<f32> {
-    na::Matrix3::new(1.0, 0.0,      x,
-                     0.0, 1.0,      y,
-                     0.0, 0.0,    1.0)
+    na::Matrix3::new(1.0, 0.0, x, 0.0, 1.0, y, 0.0, 0.0, 1.0)
 }
 
 fn scale_matrix(x_scale: f32, y_scale: f32) -> na::Matrix3<f32> {
-    na::Matrix3::new(x_scale,     0.0, 0.0,
-                         0.0, y_scale, 0.0,
-                         0.0,     0.0, 1.0)
+    na::Matrix3::new(x_scale, 0.0, 0.0, 0.0, y_scale, 0.0, 0.0, 0.0, 1.0)
 }
 
 #[derive(Clone)]
@@ -119,7 +128,6 @@ pub struct GraphicsBuilder {
 }
 
 impl GraphicsBuilder {
-
     pub fn position(mut self, x: f32, y: f32) -> Self {
         self.position = Some((x, y));
         self
@@ -167,7 +175,11 @@ impl GraphicsBuilder {
         self
     }
 
-    pub fn load_image<P: AsRef<std::path::Path>>(mut self, path: P, format: ImageFormat) -> std::io::Result<Self> {
+    pub fn load_image<P: AsRef<std::path::Path>>(
+        mut self,
+        path: P,
+        format: ImageFormat,
+    ) -> std::io::Result<Self> {
         let image = image::load(load_file(path)?, format).unwrap().to_rgba();
         let (width, height) = image.dimensions();
         self.native_size = Some((width as f32, height as f32));
@@ -175,21 +187,41 @@ impl GraphicsBuilder {
         Ok(self)
     }
 
-    pub fn text_with_font<P: AsRef<std::path::Path>>(self, text: String, font: P, color: (u8, u8, u8), size: f32) -> std::io::Result<Self> {
+    pub fn text_with_font<S: AsRef<str>, P: AsRef<std::path::Path>>(
+        self,
+        text: S,
+        font: P,
+        color: (u8, u8, u8),
+        size: f32,
+    ) -> std::io::Result<Self> {
         let mut font_data = Vec::new();
         load_file(font)?.read_to_end(&mut font_data)?;
         Ok(self.text(text, &Font::from_bytes(&font_data).unwrap(), color, size))
     }
 
-    pub fn text(mut self, text: String, font: &Font, color: (u8, u8, u8), size: f32) -> Self {
+    pub fn text<S: AsRef<str>>(
+        mut self,
+        text: S,
+        font: &Font,
+        color: (u8, u8, u8),
+        size: f32,
+    ) -> Self {
         let scale = Scale::uniform(size);
         let v_metrics = font.v_metrics(scale);
+        let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
 
-        let glyphs: Vec<_> = font
-            .layout(&text, scale, point(20.0, 20.0 + v_metrics.ascent))
+        let glyphs: Vec<_> = text
+            .as_ref()
+            .split('\n')
+            .enumerate()
+            .flat_map(|(n, line)| {
+                font.layout(
+                    line,
+                    scale,
+                    point(20.0, 20.0 + v_metrics.ascent + advance_height * n as f32),
+                )
+            })
             .collect();
-
-        let glyphs_height = (v_metrics.ascent - v_metrics.descent).ceil() as u32;
 
         let glyphs_width = {
             let min_x = glyphs
@@ -203,6 +235,18 @@ impl GraphicsBuilder {
             (max_x - min_x) as u32
         };
 
+        let glyphs_height = {
+            let min_y = glyphs
+                .first()
+                .map(|g| g.pixel_bounding_box().unwrap().min.y)
+                .unwrap();
+            let max_y = glyphs
+                .last()
+                .map(|g| g.pixel_bounding_box().unwrap().max.y)
+                .unwrap();
+            (max_y - min_y) as u32
+        };
+
         let mut image = DynamicImage::new_rgba8(glyphs_width + 40, glyphs_height + 40).to_rgba();
 
         for glyph in glyphs {
@@ -214,7 +258,7 @@ impl GraphicsBuilder {
                         x + bounding_box.min.x as u32,
                         y + bounding_box.min.y as u32,
                         // Turn the coverage into an alpha value
-                        Rgba ([color.0, color.1, color.2, (v * 255.0) as u8],),
+                        Rgba([color.0, color.1, color.2, (v * 255.0) as u8]),
                     )
                 });
             }
@@ -241,7 +285,6 @@ impl GraphicsBuilder {
             flipped_vertically: self.flipped_vertically,
         }
     }
-
 }
 
 impl Graphics {
@@ -269,10 +312,34 @@ impl Graphics {
         lower_bound: f32,
         upper_bound: f32,
     ) -> (f32, f32, f32, f32) {
-        let lower_x = remap(x - width / 2.0 * scale, -window_width/2.0, window_width/2.0, lower_bound, upper_bound);
-        let upper_x = remap(x + width / 2.0 * scale, -window_width/2.0, window_width/2.0, lower_bound, upper_bound);
-        let lower_y = remap(y - height / 2.0 * scale, -window_height/2.0, window_height/2.0, lower_bound, upper_bound);
-        let upper_y = remap(y + height / 2.0 * scale, -window_height/2.0, window_height/2.0, lower_bound, upper_bound);
+        let lower_x = remap(
+            x - width / 2.0 * scale,
+            -window_width / 2.0,
+            window_width / 2.0,
+            lower_bound,
+            upper_bound,
+        );
+        let upper_x = remap(
+            x + width / 2.0 * scale,
+            -window_width / 2.0,
+            window_width / 2.0,
+            lower_bound,
+            upper_bound,
+        );
+        let lower_y = remap(
+            y - height / 2.0 * scale,
+            -window_height / 2.0,
+            window_height / 2.0,
+            lower_bound,
+            upper_bound,
+        );
+        let upper_y = remap(
+            y + height / 2.0 * scale,
+            -window_height / 2.0,
+            window_height / 2.0,
+            lower_bound,
+            upper_bound,
+        );
         (lower_x, upper_x, lower_y, upper_y)
     }
 
@@ -288,10 +355,10 @@ impl Graphics {
         let (x, y) = position;
         let (width, height) = dimensions;
 
-        let lower_x = - width / 2.0;
-        let upper_x =   width / 2.0;
-        let lower_y = - height / 2.0;
-        let upper_y =   height / 2.0;
+        let lower_x = -width / 2.0;
+        let upper_x = width / 2.0;
+        let lower_y = -height / 2.0;
+        let upper_y = height / 2.0;
 
         let lower_left = na::Vector3::new(lower_x, lower_y, 1.0);
         let lower_right = na::Vector3::new(upper_x, lower_y, 1.0);
@@ -299,34 +366,55 @@ impl Graphics {
         let upper_right = na::Vector3::new(upper_x, upper_y, 1.0);
 
         let flip_matrix = flip_matrix(self.flipped_horizontally, self.flipped_vertically);
-        let viewport_matrix = viewport_matrix(viewport_width as f32, viewport_height as f32).try_inverse().expect("unreachable");
+        let viewport_matrix = viewport_matrix(viewport_width as f32, viewport_height as f32)
+            .try_inverse()
+            .expect("unreachable");
         let rotation_matrix = rotation_matrix(self.rotation);
         let translation_matrix = translation_matrix(x, y);
         let scale_matrix = scale_matrix(self.scale, self.scale);
 
-        let transform = viewport_matrix * translation_matrix * flip_matrix * rotation_matrix * scale_matrix;
+        let transform =
+            viewport_matrix * translation_matrix * flip_matrix * rotation_matrix * scale_matrix;
 
-        let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) =
-            self.create_vertexes_for_position(dimensions, self.texture_size, self.texture_position, 1.0, 0.0, 1.0);
+        let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) = self.create_vertexes_for_position(
+            dimensions,
+            self.texture_size,
+            self.texture_position,
+            1.0,
+            0.0,
+            1.0,
+        );
 
         let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             device,
             BufferUsage::all(),
             [
                 Vertex {
-                    position: (transform * lower_left).as_slice().try_into().expect("unreached"),
+                    position: (transform * lower_left)
+                        .as_slice()
+                        .try_into()
+                        .expect("unreached"),
                     texture: [t_lower_x, t_lower_y],
                 },
                 Vertex {
-                    position: (transform * lower_right).as_slice().try_into().expect("unreached"),
+                    position: (transform * lower_right)
+                        .as_slice()
+                        .try_into()
+                        .expect("unreached"),
                     texture: [t_upper_x, t_lower_y],
                 },
                 Vertex {
-                    position: (transform * upper_left).as_slice().try_into().expect("unreached"),
+                    position: (transform * upper_left)
+                        .as_slice()
+                        .try_into()
+                        .expect("unreached"),
                     texture: [t_lower_y, t_upper_x],
                 },
                 Vertex {
-                    position: (transform * upper_right).as_slice().try_into().expect("unreached"),
+                    position: (transform * upper_right)
+                        .as_slice()
+                        .try_into()
+                        .expect("unreached"),
                     texture: [t_upper_x, t_upper_y],
                 },
             ]
@@ -628,7 +716,8 @@ impl GraphicsSystem {
         mut graphics: WriteStorage<'a, GameObjectComponent<Graphics>>,
         positions: ReadStorage<'a, GameObjectComponent<Position>>,
         image_num: usize,
-    ) -> Result<(AutoCommandBuffer, Box<dyn GpuFuture + Send + Sync>), Box<dyn std::error::Error>> {
+    ) -> Result<(AutoCommandBuffer, Box<dyn GpuFuture + Send + Sync>), Box<dyn std::error::Error>>
+    {
         let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
         let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
