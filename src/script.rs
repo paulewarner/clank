@@ -14,12 +14,95 @@ use winit::{Event, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
-use super::core::{
+use crate::core::{
     Clank, ClankGetter, ClankScriptGetter, ClankSetter, EngineHandle, GameObjectComponent,
     MethodAdder, Scriptable,
 };
 
-type UpdateScript = dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
+use crate::state::{ScriptFields, ScriptState};
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ScriptRef {
+    File {
+        #[serde(rename = "src")]
+        src: String,
+    },
+    Internal {
+        #[serde(rename = "$value")]
+        body: String,
+    },
+}
+
+impl ScriptRef {
+    fn create_update(&self) -> std::io::Result<Arc<UpdateScript>> {
+        let script: Vec<u8> = match self {
+            ScriptRef::File { src } => {
+                let mut reader = std::io::BufReader::new(std::fs::File::open(src)?);
+                let mut v = Vec::new();
+                reader.read_to_end(&mut v)?;
+                v
+            }
+            ScriptRef::Internal { body } => body.clone().into_bytes(),
+        };
+
+        Ok(wrap_update_script(script))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ScriptedObject {
+    version: usize,
+
+    fields: ScriptFields,
+
+    #[serde(rename = "update")]
+    update: ScriptRef,
+
+    handlers: std::collections::HashMap<EventType, ScriptRef>,
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Deserialize)]
+enum EventType {
+    ButtonPressed,
+    ButtonReleased,
+}
+
+type UpdateScript =
+    dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState) + Send + Sync;
+
+fn wrap_update_script(script: Vec<u8>) -> Arc<UpdateScript> {
+    let wrapped_script = Arc::new(script);
+    Arc::new(move |system, lazy, entity, state| {
+        let script = wrapped_script.clone();
+        let lua_ptr = system.lua.clone();
+        let names = system.names.clone();
+
+        lazy.exec_mut(move |world| {
+            let lua = lua_ptr.lock().expect("Failed to lock lua");
+            lua.context(|context| {
+                let chunk = context.load(script.as_ref());
+                let globals = context.globals();
+                globals
+                    .set(
+                        "self",
+                        state
+                            .to_table(&context)
+                            .expect("Failed to convert to table"),
+                    )
+                    .expect("Failed to set value: `self`");
+                for (name, getter) in names {
+                    if let Some(component) = getter(world, entity, context) {
+                        globals
+                            .set(name, component)
+                            .expect(&format!("Failed to set value: {}", name));
+                    }
+                }
+                chunk.exec().expect("Failed to execute chunk");
+            });
+        });
+    })
+}
 
 // type HandlerScript = for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity) + Send + Sync;
 
@@ -29,6 +112,7 @@ pub struct Script {
         (winit::ElementState, VirtualKeyCode),
         Arc<dyn Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
     >,
+    state: ScriptState,
 }
 
 impl Component for Script {
@@ -42,8 +126,9 @@ impl Script {
 
     pub fn new() -> ScriptBuilder {
         ScriptBuilder {
-            update: Arc::new(|_x, _y, _z| {}),
+            update: Arc::new(|_x, _y, _z, _s| {}),
             handlers: HashMap::new(),
+            state: ScriptFields::new(vec![]),
         }
     }
 }
@@ -54,51 +139,43 @@ pub struct ScriptBuilder {
         (winit::ElementState, VirtualKeyCode),
         Arc<dyn Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync>,
     >,
+    state: ScriptFields,
 }
 
 impl ScriptBuilder {
-    pub fn with_native_update<F: Fn(EngineHandle, Clank) + Send + Sync + 'static>(
+    pub fn with_native_update<F: Fn(EngineHandle, Clank, ScriptState) + Send + Sync + 'static>(
         mut self,
         f: F,
     ) -> ScriptBuilder {
         let update = Arc::new(f);
-        self.update = Arc::new(move |system, lazy, entity| {
+        self.update = Arc::new(move |system, lazy, entity, state| {
             let update_copy = update.clone();
             let setters = system.setters.clone();
             let getters = system.getters.clone();
             lazy.exec_mut(move |world| {
                 let handle = EngineHandle::new(world, setters, getters);
                 let clank = handle.get(entity);
-                update_copy(handle, clank);
+                update_copy(handle, clank, state);
             });
         });
         self
     }
 
     pub fn with_script_update<P: AsRef<std::path::Path>>(mut self, path: P) -> ScriptBuilder {
-        let script = Arc::new(load_file(path).expect("Failed to read file"));
-        self.update = Arc::new(move |system, lazy, entity| {
-            let script = script.clone();
-            let lua_ptr = system.lua.clone();
-            let names = system.names.clone();
-
-            lazy.exec_mut(move |world| {
-                let lua = lua_ptr.lock().expect("Failed to lock lua");
-                lua.context(|context| {
-                    let chunk = context.load(script.as_ref());
-                    let globals = context.globals();
-                    for (name, getter) in names {
-                        if let Some(component) = getter(world, entity, context) {
-                            globals
-                                .set(name, component)
-                                .expect(&format!("Failed to set value: {}", name));
-                        }
-                    }
-                    chunk.exec().expect("Failed to execute chunk");
-                });
-            });
-        });
+        let script = load_file(path).expect("Failed to read file");
+        self.update = wrap_update_script(script);
         self
+    }
+
+    pub fn with_script_file<P: AsRef<std::path::Path>>(
+        mut self,
+        fp: P,
+    ) -> Result<ScriptBuilder, Box<dyn std::error::Error>> {
+        let scripted_object: ScriptedObject =
+            serde_xml_rs::from_reader(std::io::BufReader::new(std::fs::File::open(fp)?))?;
+        self.update = scripted_object.update.create_update()?;
+        self.state = scripted_object.fields;
+        Ok(self)
     }
 
     pub fn with_handler<F: Fn(EngineHandle, Clank, KeyboardInput) + Send + Sync + 'static>(
@@ -114,6 +191,7 @@ impl ScriptBuilder {
         Script {
             update: self.update,
             handlers: self.handlers,
+            state: ScriptState::new(self.state),
         }
     }
 }
@@ -173,7 +251,8 @@ impl ScriptSystem {
         for (entity, script_obj) in (entities, scripts).join() {
             let script = script_obj.get();
             if script.should_run() {
-                (script.update)(self, lazy, entity);
+                let state = script.state.clone();
+                (script.update)(self, lazy, entity, state);
             }
         }
     }

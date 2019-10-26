@@ -1,0 +1,11 @@
+<Scriptable>
+    <version>0</version>
+    <fields>
+        <Int name="xyz">0</Int>
+    </fields>
+    <update>
+print(self.xyz)
+self.xyz = self.xyz +  1
+    </update>
+    <handlers></handlers>
+</Scriptable>

@@ -8,8 +8,11 @@ extern crate log;
 extern crate rand;
 extern crate rlua;
 extern crate rusttype;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
+extern crate serde_xml_rs;
 extern crate specs;
 extern crate vulkano;
 extern crate vulkano_shaders;
@@ -31,6 +34,7 @@ pub mod graphics;
 pub mod position;
 pub mod script;
 pub mod sprite;
+pub mod state;
 
 pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::error::Error>> {
     let world = World::new();
