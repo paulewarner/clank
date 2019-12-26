@@ -4,6 +4,7 @@
 * Fill out lua APIs for existing systems
 * Add event handlers in Lua
 * Add timers, both native and lua
+* Consideration for button presses: do we want to respond to them only once, or continually while held down?
 
 # New Systems
 * Add tile renderer for maps
@@ -16,3 +17,5 @@
 
 # Refactoring
 * Consider abstracting away GameObjectComponent with a special storage type
+* Fix GraphicsBuilder API so that it only returns a result on build()
+* Clean up logging. Try to reduce the number of average fps and ignored window events

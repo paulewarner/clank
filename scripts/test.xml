@@ -4,8 +4,14 @@
         <Int name="xyz">0</Int>
     </fields>
     <update>
-print(self.xyz)
 self.xyz = self.xyz +  1
     </update>
-    <handlers></handlers>
+    <handlers>
+        <ButtonPressed>
+            print("Button pressed: ", event.button)
+        </ButtonPressed>
+        <ButtonReleased>
+            print("Button released: ", event.button)
+        </ButtonReleased>
+    </handlers>
 </Scriptable>
