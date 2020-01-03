@@ -167,9 +167,9 @@ fn map_keycode(code: VirtualKeyCode) -> Result<&'static str, &'static str> {
 }
 
 impl std::convert::TryFrom<WEvent> for Event {
-    type Error = &'static str;
+    type Error = String;
 
-    fn try_from(ev: WEvent) -> Result<Event, &'static str> {
+    fn try_from(ev: WEvent) -> Result<Event, String> {
         match ev {
             WEvent::WindowEvent {
                 window_id: _,
@@ -185,7 +185,7 @@ impl std::convert::TryFrom<WEvent> for Event {
                     winit::ElementState::Released => Ok(Event::ButtonReleased(map_keycode(keycode)?.to_owned()))
                 }
             },
-            _ => Err("unsupported event type")
+            _ => Err("unsupported event type".to_owned())
         }
     }
 }
@@ -373,7 +373,7 @@ impl Scriptable for Script {
 }
 
 pub struct ScriptSystem {
-    chan: Receiver<WEvent>,
+    chan: Receiver<Event>,
     setters: HashMap<TypeId, Arc<ClankSetter>>,
     getters: HashMap<TypeId, Arc<ClankGetter>>,
     names: HashMap<&'static str, Arc<ClankScriptGetter>>,
@@ -395,7 +395,7 @@ impl<'a> System<'a> for ScriptSystem {
 
 impl ScriptSystem {
     pub fn new(
-        chan: Receiver<WEvent>,
+        chan: Receiver<Event>,
         setters: HashMap<TypeId, Arc<ClankSetter>>,
         getters: HashMap<TypeId, Arc<ClankGetter>>,
         names: HashMap<&'static str, Arc<ClankScriptGetter>>,

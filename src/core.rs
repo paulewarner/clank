@@ -1,12 +1,14 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use winit::{Event, EventsLoop, WindowEvent};
+use winit::{Event as WEvent, EventsLoop, WindowEvent};
+use super::script::Event;
 
 use rlua::prelude::*;
 use specs::prelude::*;
@@ -352,18 +354,18 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
 
             &mut self.events_loop.poll_events(|ev| {
                 match ev {
-                    Event::WindowEvent {
+                    WEvent::WindowEvent {
                         event: WindowEvent::CloseRequested,
                         ..
                     } => done = true,
-                    Event::WindowEvent {
+                    WEvent::WindowEvent {
                         event: WindowEvent::Resized(_),
                         ..
                     } => swapchain_flag.store(true, Ordering::Relaxed),
                     _ => (),
                 };
-                match event_chan.send(ev) {
-                    Ok(()) => (),
+                match Event::try_from(ev).and_then(|x| event_chan.send(x).map_err(|y| format!("Failed to send chan, {}", y))) {
+                    Ok(_e) => (),
                     Err(e) => error!("Failed to send event {}", e),
                 };
             });
