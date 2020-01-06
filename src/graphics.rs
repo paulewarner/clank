@@ -682,11 +682,7 @@ impl GraphicsSystem {
                 .build(device.clone())?,
         );
 
-        let mut dynamic_state = DynamicState {
-            line_width: None,
-            viewports: None,
-            scissors: None,
-        };
+        let mut dynamic_state = DynamicState::none();
         let framebuffers =
             window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
 
