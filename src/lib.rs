@@ -36,6 +36,8 @@ pub mod script;
 pub mod sprite;
 pub mod state;
 
+pub use image::ImageFormat;
+
 pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::error::Error>> {
     let world = World::new();
     let events_loop = EventsLoop::new();
@@ -49,7 +51,7 @@ pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::erro
     let mut engine = core::ClankEngine::new(world, dispatcher, swapchain_flag, events_loop);
 
     let config: sprite::SpriteConfig =
-        serde_json::from_reader(BufReader::new(File::open("SpriteConfig.json")?))?;
+        serde_json::from_reader(BufReader::new(File::open("resources/SpriteConfig.json")?))?;
 
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
