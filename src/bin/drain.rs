@@ -2,13 +2,13 @@ fn main() {
     clank::assemble()
         .expect("Failed to initialize clank")
         .run(|mut world| {
-            let anim = clank::anim::Animation::new()
+            let anim = clank::graphics::anim::Animation::new()
                 .add_frame(
                     std::time::Duration::from_secs(1),
                     clank::graphics::Graphics::new()
                         .text_with_font("Line One\nLine Two", "Go-Medium.ttf", (0, 0, 0), 100.0)
-                        .unwrap()
-                        .build(),
+                        .build()
+                        .unwrap(),
                 )
                 .build();
             let first = clank::new()

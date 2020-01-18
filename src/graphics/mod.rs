@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
-use image::{DynamicImage, GenericImageView, ImageBuffer, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgba};
 
 pub use image::ImageFormat;
 
@@ -37,8 +37,12 @@ use vulkano_win::VkSurfaceBuild;
 
 use winit::{EventsLoop, Window, WindowBuilder};
 
-use super::core::{GameObjectComponent, MethodAdder, Scriptable};
-use super::position::Position;
+use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
+use crate::position::Position;
+
+pub mod anim;
+mod draw2d;
+pub mod sprite;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
@@ -66,13 +70,13 @@ fn viewport_matrix(width: f32, height: f32) -> na::Matrix3<f32> {
     )
 }
 
-fn rotation_matrix(angle: f32) -> na::Matrix3<f32> {
+fn rotation_matrix(degrees: f32) -> na::Matrix3<f32> {
     na::Matrix3::new(
-        angle.to_radians().cos(),
-        angle.to_radians().sin(),
+        degrees.to_radians().cos(),
+        degrees.to_radians().sin(),
         0.0,
-        -angle.to_radians().sin(),
-        angle.to_radians().cos(),
+        -degrees.to_radians().sin(),
+        degrees.to_radians().cos(),
         0.0,
         0.0,
         0.0,
@@ -114,6 +118,23 @@ pub struct Graphics {
     flipped_vertically: bool,
 }
 
+enum ImageDesc {
+    Image(ImageBuffer<image::Rgba<u8>, Vec<u8>>),
+    ImagePath(std::path::PathBuf, image::ImageFormat),
+    TextWithFont {
+        text: String,
+        font: Font<'static>,
+        color: (u8, u8, u8),
+        size: f32,
+    },
+    TextWithFontPath {
+        text: String,
+        font_path: std::path::PathBuf,
+        color: (u8, u8, u8),
+        size: f32,
+    },
+}
+
 pub struct GraphicsBuilder {
     position: Option<(f32, f32)>,
     size: Option<(f32, f32)>,
@@ -121,10 +142,89 @@ pub struct GraphicsBuilder {
     rotation: Option<f32>,
     texture_position: Option<(f32, f32)>,
     texture_size: Option<(f32, f32)>,
-    image: Option<ImageBuffer<image::Rgba<u8>, Vec<u8>>>,
-    native_size: Option<(f32, f32)>,
+    image: Option<ImageDesc>,
     flipped_horizontally: bool,
     flipped_vertically: bool,
+}
+
+fn load_image_from_path<P: AsRef<std::path::Path>>(
+    path: P,
+    format: ImageFormat,
+) -> std::io::Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
+    let image = image::load(load_file(path)?, format).unwrap().to_rgba();
+    Ok(image)
+}
+
+fn layout_text(
+    text: String,
+    font: Font,
+    color: (u8, u8, u8),
+    size: f32,
+) -> ImageBuffer<image::Rgba<u8>, Vec<u8>> {
+    let scale = Scale::uniform(size);
+    let v_metrics = font.v_metrics(scale);
+    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
+
+    let glyphs: Vec<_> = text
+        .split('\n')
+        .enumerate()
+        .flat_map(|(n, line)| {
+            font.layout(
+                line,
+                scale,
+                point(20.0, 20.0 + v_metrics.ascent + advance_height * n as f32),
+            )
+        })
+        .collect();
+
+    let glyphs_width = {
+        let min_x = glyphs
+            .first()
+            .map(|g| g.pixel_bounding_box().unwrap().min.x)
+            .unwrap();
+        let max_x = glyphs
+            .last()
+            .map(|g| g.pixel_bounding_box().unwrap().max.x)
+            .unwrap();
+        (max_x - min_x) as u32
+    };
+
+    let glyphs_height = {
+        let min_y = glyphs
+            .first()
+            .map(|g| g.pixel_bounding_box().unwrap().min.y)
+            .unwrap();
+        let max_y = glyphs
+            .last()
+            .map(|g| g.pixel_bounding_box().unwrap().max.y)
+            .unwrap();
+        (max_y - min_y) as u32
+    };
+
+    let mut image = DynamicImage::new_rgba8(glyphs_width + 40, glyphs_height + 40).to_rgba();
+
+    for glyph in glyphs {
+        if let Some(bounding_box) = glyph.pixel_bounding_box() {
+            // Draw the glyph into the image per-pixel by using the draw closure
+            glyph.draw(|x, y, v| {
+                image.put_pixel(
+                    // Offset the position by the glyph bounding box
+                    x + bounding_box.min.x as u32,
+                    y + bounding_box.min.y as u32,
+                    // Turn the coverage into an alpha value
+                    Rgba([color.0, color.1, color.2, (v * 255.0) as u8]),
+                )
+            });
+        }
+    }
+
+    image
+}
+
+fn load_font<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<Font<'static>> {
+    let mut font_data = Vec::new();
+    load_file(path)?.read_to_end(&mut font_data)?;
+    Ok(Font::from_bytes(font_data).unwrap())
 }
 
 impl GraphicsBuilder {
@@ -169,121 +269,85 @@ impl GraphicsBuilder {
     }
 
     pub fn image(mut self, image: DynamicImage) -> Self {
-        let (width, height) = image.dimensions();
-        self.native_size = Some((width as f32, height as f32));
-        self.image = Some(image.to_rgba());
+        self.image = Some(ImageDesc::Image(image.to_rgba()));
         self
     }
 
-    pub fn load_image<P: AsRef<std::path::Path>>(
-        mut self,
-        path: P,
-        format: ImageFormat,
-    ) -> std::io::Result<Self> {
-        let image = image::load(load_file(path)?, format).unwrap().to_rgba();
-        let (width, height) = image.dimensions();
-        self.native_size = Some((width as f32, height as f32));
-        self.image = Some(image);
-        Ok(self)
+    pub fn load_image<P: AsRef<std::path::Path>>(mut self, path: P, format: ImageFormat) -> Self {
+        self.image = Some(ImageDesc::ImagePath(path.as_ref().to_path_buf(), format));
+        self
     }
 
     pub fn text_with_font<S: AsRef<str>, P: AsRef<std::path::Path>>(
-        self,
+        mut self,
         text: S,
-        font: P,
+        font_path: P,
         color: (u8, u8, u8),
         size: f32,
-    ) -> std::io::Result<Self> {
-        let mut font_data = Vec::new();
-        load_file(font)?.read_to_end(&mut font_data)?;
-        Ok(self.text(text, &Font::from_bytes(&font_data).unwrap(), color, size))
+    ) -> Self {
+        self.image = Some(ImageDesc::TextWithFontPath {
+            text: String::from(text.as_ref()),
+            font_path: font_path.as_ref().to_path_buf(),
+            color,
+            size,
+        });
+        self
     }
 
     pub fn text<S: AsRef<str>>(
         mut self,
         text: S,
-        font: &Font,
+        font: Font<'static>,
         color: (u8, u8, u8),
         size: f32,
     ) -> Self {
-        let scale = Scale::uniform(size);
-        let v_metrics = font.v_metrics(scale);
-        let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
-
-        let glyphs: Vec<_> = text
-            .as_ref()
-            .split('\n')
-            .enumerate()
-            .flat_map(|(n, line)| {
-                font.layout(
-                    line,
-                    scale,
-                    point(20.0, 20.0 + v_metrics.ascent + advance_height * n as f32),
-                )
-            })
-            .collect();
-
-        let glyphs_width = {
-            let min_x = glyphs
-                .first()
-                .map(|g| g.pixel_bounding_box().unwrap().min.x)
-                .unwrap();
-            let max_x = glyphs
-                .last()
-                .map(|g| g.pixel_bounding_box().unwrap().max.x)
-                .unwrap();
-            (max_x - min_x) as u32
-        };
-
-        let glyphs_height = {
-            let min_y = glyphs
-                .first()
-                .map(|g| g.pixel_bounding_box().unwrap().min.y)
-                .unwrap();
-            let max_y = glyphs
-                .last()
-                .map(|g| g.pixel_bounding_box().unwrap().max.y)
-                .unwrap();
-            (max_y - min_y) as u32
-        };
-
-        let mut image = DynamicImage::new_rgba8(glyphs_width + 40, glyphs_height + 40).to_rgba();
-
-        for glyph in glyphs {
-            if let Some(bounding_box) = glyph.pixel_bounding_box() {
-                // Draw the glyph into the image per-pixel by using the draw closure
-                glyph.draw(|x, y, v| {
-                    image.put_pixel(
-                        // Offset the position by the glyph bounding box
-                        x + bounding_box.min.x as u32,
-                        y + bounding_box.min.y as u32,
-                        // Turn the coverage into an alpha value
-                        Rgba([color.0, color.1, color.2, (v * 255.0) as u8]),
-                    )
-                });
-            }
-        }
-
-        let (width, height) = image.dimensions();
-
-        self.image = Some(image);
-        self.native_size = Some((width as f32, height as f32));
+        self.image = Some(ImageDesc::TextWithFont {
+            text: String::from(text.as_ref()),
+            font,
+            color,
+            size,
+        });
         self
     }
 
-    pub fn build(self) -> Graphics {
-        Graphics {
-            image: self.image.unwrap(),
+    pub fn build(self) -> Result<Graphics, Box<dyn Error>> {
+        let image = self
+            .image
+            .map(|x| match x {
+                ImageDesc::Image(image) => Ok(image),
+                ImageDesc::ImagePath(path, format) => load_image_from_path(path, format),
+                ImageDesc::TextWithFont {
+                    text,
+                    font,
+                    color,
+                    size,
+                } => Ok(layout_text(text, font, color, size)),
+                ImageDesc::TextWithFontPath {
+                    text,
+                    font_path,
+                    color,
+                    size,
+                } => Ok(layout_text(text, load_font(font_path)?, color, size)),
+            })
+            .transpose()?;
+
+        let size = image
+            .as_ref()
+            .map(|x| x.dimensions())
+            .map(|(width, height)| (width as f32, height as f32));
+
+        Ok(Graphics {
+            image: image.unwrap(),
             position: self.position,
             scale: self.scale.unwrap_or(1.0),
             texture_position: self.texture_position.unwrap_or((0.0, 0.0)),
-            texture_size: self.texture_size.or(self.native_size).unwrap(),
+            texture_size: self.texture_size.or(size).unwrap(),
             texture_buffer: None,
             vertex_buffer: None,
             rotation: self.rotation.unwrap_or(0.0),
             flipped_horizontally: self.flipped_horizontally,
             flipped_vertically: self.flipped_vertically,
-        }
+        })
     }
 }
 
@@ -297,7 +361,6 @@ impl Graphics {
             texture_position: None,
             texture_size: None,
             image: None,
-            native_size: None,
             flipped_horizontally: false,
             flipped_vertically: false,
         }

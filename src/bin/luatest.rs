@@ -6,8 +6,8 @@ fn main() {
                 .with_component(
                     clank::graphics::Graphics::new()
                         .load_image("image.png", image::ImageFormat::PNG)
-                        .unwrap()
-                        .build(),
+                        .build()
+                        .unwrap(),
                 )
                 .with_component(clank::position::Position::new(0.0, 0.0))
                 .with_component(

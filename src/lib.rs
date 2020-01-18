@@ -28,14 +28,11 @@ use winit::EventsLoop;
 
 use specs::prelude::*;
 
-pub mod anim;
 mod core;
 pub mod graphics;
 pub mod position;
 pub mod script;
-pub mod sprite;
 pub mod state;
-pub mod tilemap;
 
 pub use image::ImageFormat;
 
@@ -51,20 +48,20 @@ pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::erro
 
     let mut engine = core::ClankEngine::new(world, dispatcher, swapchain_flag, events_loop);
 
-    let config: sprite::SpriteConfig =
+    let config: graphics::sprite::SpriteConfig =
         serde_json::from_reader(BufReader::new(File::open("resources/SpriteConfig.json")?))?;
 
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
-    engine.register::<anim::Animation>();
+    engine.register::<graphics::anim::Animation>();
     engine.register::<position::Position>();
-    engine.register::<sprite::Sprite>();
+    engine.register::<graphics::sprite::Sprite>();
 
     engine.insert(config);
 
     Ok(engine
-        .register_system(sprite::SpriteSystem, "sprite", &[])
-        .register_system(anim::AnimationSystem, "animation", &["sprite"])
+        .register_system(graphics::sprite::SpriteSystem, "sprite", &[])
+        .register_system(graphics::anim::AnimationSystem, "animation", &["sprite"])
         .register_system(graphics_system, "graphics", &["animation"]))
 }
 

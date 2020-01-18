@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use winit::{Event as WEvent, EventsLoop, WindowEvent};
 use super::script::Event;
+use winit::{Event as WEvent, EventsLoop, WindowEvent};
 
 use rlua::prelude::*;
 use specs::prelude::*;
@@ -280,10 +280,9 @@ impl Clank {
 const FPS_CAP: u128 = 60;
 const SCREEN_TICKS_PER_FRAME: u128 = 1000 / FPS_CAP;
 
-pub type ClankSetter =
-    dyn for<'g> Fn(EntityBuilder<'g>, Arc<dyn Any + Send + Sync + 'static>) -> EntityBuilder<'g>
-        + Send
-        + Sync;
+pub type ClankSetter = dyn for<'g> Fn(EntityBuilder<'g>, Arc<dyn Any + Send + Sync + 'static>) -> EntityBuilder<'g>
+    + Send
+    + Sync;
 pub type ClankGetter = dyn Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 
 pub type ClankScriptGetter =
@@ -364,7 +363,11 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
                     } => swapchain_flag.store(true, Ordering::Relaxed),
                     _ => (),
                 };
-                match Event::try_from(ev).and_then(|x| event_chan.send(x).map_err(|y| format!("Failed to send chan, {}", y))) {
+                match Event::try_from(ev).and_then(|x| {
+                    event_chan
+                        .send(x)
+                        .map_err(|y| format!("Failed to send chan, {}", y))
+                }) {
                     Ok(_e) => (),
                     Err(e) => error!("Failed to send event {}", e),
                 };

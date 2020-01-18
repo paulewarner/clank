@@ -60,7 +60,7 @@ pub struct TileMap {
 }
 
 impl TileMap {
-    fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<TileMap, Box<dyn std::error::Error>> {
+    pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<TileMap, Box<dyn std::error::Error>> {
         let file = std::io::BufReader::new(std::fs::File::open(path)?);
         Ok(serde_json::from_reader(file)?)
     }

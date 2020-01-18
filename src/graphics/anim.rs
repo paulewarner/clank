@@ -3,10 +3,8 @@ use std::time::{Duration, Instant};
 
 use specs::prelude::*;
 
-use super::core::GameObjectComponent;
-use super::core::MethodAdder;
-use super::core::Scriptable;
-use super::graphics::Graphics;
+use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
+use crate::graphics::Graphics;
 
 pub struct AnimationBuilder {
     frames: Vec<Frame>,

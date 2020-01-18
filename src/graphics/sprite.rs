@@ -8,9 +8,9 @@ use std::io::BufReader;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use super::anim;
-use super::core::{GameObjectComponent, MethodAdder, Scriptable};
-use super::graphics;
+use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
+use crate::graphics;
+use crate::graphics::anim;
 
 pub struct SpriteSystem;
 
@@ -138,7 +138,8 @@ impl SpriteTypeInfo {
                         graphics::Graphics::new()
                             .image(self.get_image_by_index(&mut sprite_sheet, frame.sprite_number))
                             .scale(scale)
-                            .build(),
+                            .build()
+                            .unwrap(),
                     );
                 }
                 (

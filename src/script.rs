@@ -114,7 +114,7 @@ fn wrap_update_script(script: Vec<u8>) -> Arc<UpdateScript> {
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum Event {
     ButtonPressed(String),
-    ButtonReleased(String)
+    ButtonReleased(String),
 }
 
 fn map_keycode(code: VirtualKeyCode) -> Result<&'static str, &'static str> {
@@ -162,7 +162,7 @@ fn map_keycode(code: VirtualKeyCode) -> Result<&'static str, &'static str> {
         VirtualKeyCode::Space => Ok("space"),
         VirtualKeyCode::Tab => Ok("tab"),
         VirtualKeyCode::Capital => Ok("shift"),
-        _ => Err("Cannot convert!")
+        _ => Err("Cannot convert!"),
     }
 }
 
@@ -181,21 +181,24 @@ impl std::convert::TryFrom<WEvent> for Event {
             } => {
                 let keycode = input.virtual_keycode.ok_or("No keycode present")?;
                 match input.state {
-                    winit::ElementState::Pressed => Ok(Event::ButtonPressed(map_keycode(keycode)?.to_owned())),
-                    winit::ElementState::Released => Ok(Event::ButtonReleased(map_keycode(keycode)?.to_owned()))
+                    winit::ElementState::Pressed => {
+                        Ok(Event::ButtonPressed(map_keycode(keycode)?.to_owned()))
+                    }
+                    winit::ElementState::Released => {
+                        Ok(Event::ButtonReleased(map_keycode(keycode)?.to_owned()))
+                    }
                 }
-            },
-            _ => Err("unsupported event type".to_owned())
+            }
+            _ => Err("unsupported event type".to_owned()),
         }
     }
 }
 
 impl std::convert::From<Event> for EventType {
-
     fn from(ev: Event) -> EventType {
         match ev {
             Event::ButtonPressed(_) => EventType::ButtonPressed,
-            Event::ButtonReleased(_) => EventType::ButtonReleased
+            Event::ButtonReleased(_) => EventType::ButtonReleased,
         }
     }
 }
@@ -207,7 +210,7 @@ impl<'lua> ToLua<'lua> for Event {
             Event::ButtonPressed(s) => {
                 ev.set("type", "ButtonPressed")?;
                 ev.set("button", s)?;
-            },
+            }
             Event::ButtonReleased(s) => {
                 ev.set("type", "ButtonReleased")?;
                 ev.set("button", s)?;
@@ -240,7 +243,8 @@ fn wrap_handler_script(script: Vec<u8>) -> Arc<HandlerScript> {
                             .expect("Failed to convert to table"),
                     )
                     .expect("Failed to set value: `self`");
-                globals.set("event", event)
+                globals
+                    .set("event", event)
                     .expect("Failed to set value `event`");
                 for (name, getter) in names {
                     if let Some(component) = getter(world, entity, context) {
@@ -257,10 +261,7 @@ fn wrap_handler_script(script: Vec<u8>) -> Arc<HandlerScript> {
 
 pub struct Script {
     update: Arc<UpdateScript>,
-    handlers: HashMap<
-        EventType,
-        Arc<HandlerScript>,
-    >,
+    handlers: HashMap<EventType, Arc<HandlerScript>>,
     state: ScriptState,
 }
 
@@ -284,10 +285,7 @@ impl Script {
 
 pub struct ScriptBuilder {
     update: Arc<UpdateScript>,
-    handlers: HashMap<
-        EventType,
-        Arc<HandlerScript>,
-    >,
+    handlers: HashMap<EventType, Arc<HandlerScript>>,
     state: ScriptFields,
 }
 
@@ -323,7 +321,9 @@ impl ScriptBuilder {
         let scripted_object: ScriptedObject =
             serde_xml_rs::from_reader(std::io::BufReader::new(std::fs::File::open(fp)?))?;
         self.update = scripted_object.update.create_update()?;
-        self.handlers = scripted_object.handlers.into_iter()
+        self.handlers = scripted_object
+            .handlers
+            .into_iter()
             .map(|(k, v)| (k, v.create_handler().expect("Failed to read file")))
             .collect();
         self.state = scripted_object.fields;
@@ -336,16 +336,19 @@ impl ScriptBuilder {
         f: F,
     ) -> ScriptBuilder {
         let script = Arc::new(f);
-        self.handlers.insert(input, Arc::new(move |system, lazy, entity, state, event| {
-            let script_copy = script.clone();
-            let inserters = system.setters.clone();
-            let getters = system.getters.clone();
-            lazy.exec_mut(move |world| {
-                let handle = EngineHandle::new(world, inserters, getters);
-                let clank = handle.get(entity);
-                script_copy(handle, clank, state, event);
-            });
-        }));
+        self.handlers.insert(
+            input,
+            Arc::new(move |system, lazy, entity, state, event| {
+                let script_copy = script.clone();
+                let inserters = system.setters.clone();
+                let getters = system.getters.clone();
+                lazy.exec_mut(move |world| {
+                    let handle = EngineHandle::new(world, inserters, getters);
+                    let clank = handle.get(entity);
+                    script_copy(handle, clank, state, event);
+                });
+            }),
+        );
         self
     }
 
@@ -426,20 +429,19 @@ impl ScriptSystem {
                     for (entity, script_obj) in (entities, scripts).join() {
                         let script = script_obj.get();
                         script
-                        .handlers
-                        .get(&EventType::from(event.clone()))
-                        .cloned()
-                        .map(|s| {
-                            let state = script.state.clone();
-                            s(self, lazy, entity, state, event.clone());
-                        });
+                            .handlers
+                            .get(&EventType::from(event.clone()))
+                            .cloned()
+                            .map(|s| {
+                                let state = script.state.clone();
+                                s(self, lazy, entity, state, event.clone());
+                            });
+                    }
                 }
-                },
                 Err(e) => {
                     debug!("Failed to convert window event for handling processing with the following error: {:?}", e);
                 }
             }
-
         }
     }
 }
