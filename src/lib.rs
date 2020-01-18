@@ -35,6 +35,7 @@ pub mod position;
 pub mod script;
 pub mod sprite;
 pub mod state;
+pub mod tilemap;
 
 pub use image::ImageFormat;
 
