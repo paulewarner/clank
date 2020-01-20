@@ -77,9 +77,10 @@ impl SpriteConfig {
         sprite_type: S1,
         default: S2,
         scale: Option<f32>,
-    ) -> Result<Sprite, Box<dyn Error>> {
+    ) -> Result<Sprite, Box<dyn std::error::Error>> {
         let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
-        self.types
+        Ok(self
+            .types
             .get(sprite_type.as_ref())
             .map(|sprite_type_info| {
                 sprite_type_info.create_sprite(
@@ -88,9 +89,10 @@ impl SpriteConfig {
                     scale.unwrap_or(sprite_type_info.default_scale),
                 )
             })
+            .transpose()?
             .ok_or(Box::new(NoSpriteTypeFound {
                 sprite_type: String::from(sprite_type.as_ref()),
-            }))
+            }))?)
     }
 
     pub fn create_sprite_with_scale<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
@@ -124,7 +126,12 @@ struct SpriteTypeInfo {
 }
 
 impl SpriteTypeInfo {
-    fn create_sprite(&self, mut sprite_sheet: DynamicImage, default: String, scale: f32) -> Sprite {
+    fn create_sprite(
+        &self,
+        mut sprite_sheet: DynamicImage,
+        default: String,
+        scale: f32,
+    ) -> Result<Sprite, Box<dyn std::error::Error>> {
         let animations: HashMap<String, GameObjectComponent<anim::Animation>> = self
             .animation_info
             .clone()
@@ -138,21 +145,23 @@ impl SpriteTypeInfo {
                         graphics::Graphics::new()
                             .image(self.get_image_by_index(&mut sprite_sheet, frame.sprite_number))
                             .scale(scale)
-                            .build()
-                            .unwrap(),
+                            .build()?,
                     );
                 }
-                (
+                Ok((
                     key,
                     GameObjectComponent::new(Mutex::new(builder.id(id).build())),
-                )
+                ))
             })
-            .collect();
+            .collect::<Result<
+                HashMap<String, GameObjectComponent<anim::Animation>>,
+                Box<dyn std::error::Error>,
+            >>()?;
 
-        Sprite {
+        Ok(Sprite {
             animations,
             current: default,
-        }
+        })
     }
 
     fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {

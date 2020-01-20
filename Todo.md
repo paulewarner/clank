@@ -15,5 +15,4 @@
 
 # Refactoring
 * Consider abstracting away GameObjectComponent with a special storage type
-* Fix GraphicsBuilder API so that it only returns a result on build()
 * Clean up logging. Try to reduce the number of average fps and ignored window events

@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::error::Error;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,6 +117,18 @@ pub struct Graphics {
     flipped_vertically: bool,
 }
 
+pub struct GraphicsBuilder {
+    position: Option<(f32, f32)>,
+    size: Option<(f32, f32)>,
+    scale: Option<f32>,
+    rotation: Option<f32>,
+    texture_position: Option<(f32, f32)>,
+    texture_size: Option<(f32, f32)>,
+    image: Option<ImageDesc>,
+    flipped_horizontally: bool,
+    flipped_vertically: bool,
+}
+
 enum ImageDesc {
     Image(ImageBuffer<image::Rgba<u8>, Vec<u8>>),
     ImagePath(std::path::PathBuf, image::ImageFormat),
@@ -135,23 +146,11 @@ enum ImageDesc {
     },
 }
 
-pub struct GraphicsBuilder {
-    position: Option<(f32, f32)>,
-    size: Option<(f32, f32)>,
-    scale: Option<f32>,
-    rotation: Option<f32>,
-    texture_position: Option<(f32, f32)>,
-    texture_size: Option<(f32, f32)>,
-    image: Option<ImageDesc>,
-    flipped_horizontally: bool,
-    flipped_vertically: bool,
-}
-
 fn load_image_from_path<P: AsRef<std::path::Path>>(
     path: P,
     format: ImageFormat,
-) -> std::io::Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>> {
-    let image = image::load(load_file(path)?, format).unwrap().to_rgba();
+) -> Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
+    let image = image::load(load_file(path)?, format)?.to_rgba();
     Ok(image)
 }
 
@@ -160,7 +159,7 @@ fn layout_text(
     font: Font,
     color: (u8, u8, u8),
     size: f32,
-) -> ImageBuffer<image::Rgba<u8>, Vec<u8>> {
+) -> Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
     let scale = Scale::uniform(size);
     let v_metrics = font.v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
@@ -180,24 +179,24 @@ fn layout_text(
     let glyphs_width = {
         let min_x = glyphs
             .first()
-            .map(|g| g.pixel_bounding_box().unwrap().min.x)
-            .unwrap();
+            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
+            .ok_or(NoneError)?;
         let max_x = glyphs
             .last()
-            .map(|g| g.pixel_bounding_box().unwrap().max.x)
-            .unwrap();
+            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
+            .ok_or(NoneError)?;
         (max_x - min_x) as u32
     };
 
     let glyphs_height = {
         let min_y = glyphs
             .first()
-            .map(|g| g.pixel_bounding_box().unwrap().min.y)
-            .unwrap();
+            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
+            .ok_or(NoneError)?;
         let max_y = glyphs
             .last()
-            .map(|g| g.pixel_bounding_box().unwrap().max.y)
-            .unwrap();
+            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
+            .ok_or(NoneError)?;
         (max_y - min_y) as u32
     };
 
@@ -218,13 +217,15 @@ fn layout_text(
         }
     }
 
-    image
+    Ok(image)
 }
 
-fn load_font<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<Font<'static>> {
+fn load_font<P: AsRef<std::path::Path>>(
+    path: P,
+) -> Result<Font<'static>, Box<dyn std::error::Error>> {
     let mut font_data = Vec::new();
     load_file(path)?.read_to_end(&mut font_data)?;
-    Ok(Font::from_bytes(font_data).unwrap())
+    Ok(Font::from_bytes(font_data)?)
 }
 
 impl GraphicsBuilder {
@@ -310,7 +311,7 @@ impl GraphicsBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Graphics, Box<dyn Error>> {
+    pub fn build(self) -> Result<Graphics, Box<dyn std::error::Error>> {
         let image = self
             .image
             .map(|x| match x {
@@ -321,13 +322,13 @@ impl GraphicsBuilder {
                     font,
                     color,
                     size,
-                } => Ok(layout_text(text, font, color, size)),
+                } => Ok(layout_text(text, font, color, size)?),
                 ImageDesc::TextWithFontPath {
                     text,
                     font_path,
                     color,
                     size,
-                } => Ok(layout_text(text, load_font(font_path)?, color, size)),
+                } => Ok(layout_text(text, load_font(font_path)?, color, size)?),
             })
             .transpose()?;
 
@@ -337,11 +338,11 @@ impl GraphicsBuilder {
             .map(|(width, height)| (width as f32, height as f32));
 
         Ok(Graphics {
-            image: image.unwrap(),
+            image: image.ok_or(NoneError)?,
             position: self.position,
             scale: self.scale.unwrap_or(1.0),
             texture_position: self.texture_position.unwrap_or((0.0, 0.0)),
-            texture_size: self.texture_size.or(size).unwrap(),
+            texture_size: self.texture_size.or(size).ok_or(NoneError)?,
             texture_buffer: None,
             vertex_buffer: None,
             rotation: self.rotation.unwrap_or(0.0),
@@ -410,10 +411,10 @@ impl Graphics {
         &self,
         position: (f32, f32),
         device: Arc<Device>,
-    ) -> Result<Arc<CpuAccessibleBuffer<[Vertex]>>, Box<dyn Error>> {
+    ) -> Result<Arc<CpuAccessibleBuffer<[Vertex]>>, Box<dyn std::error::Error>> {
         let reg_dimensions = self.image.dimensions();
         let dimensions = (reg_dimensions.0 as f32, reg_dimensions.1 as f32);
-        let (viewport_width, viewport_height) = VIEWPORT_SIZE.lock().unwrap().clone();
+        let (viewport_width, viewport_height) = VIEWPORT_SIZE.lock()?.clone();
 
         let (x, y) = position;
         let (width, height) = dimensions;
@@ -495,7 +496,7 @@ impl Graphics {
             Arc<dyn DescriptorSet + Send + Sync>,
             Box<dyn GpuFuture + Send + Sync>,
         ),
-        Box<dyn Error>,
+        Box<dyn std::error::Error>,
     > {
         let dimensions = self.image.dimensions();
         let image_dimensions = (dimensions.0 as f64, dimensions.1 as f64);
@@ -528,8 +529,8 @@ impl Graphics {
         &mut self,
         (new_x, new_y): (f32, f32),
         device: Arc<Device>,
-    ) -> Result<(), Box<dyn Error>> {
-        let (width, height) = *VIEWPORT_SIZE.lock().unwrap();
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (width, height) = *VIEWPORT_SIZE.lock()?;
         match self.position {
             Some((old_x, old_y)) => {
                 self.position = Some((new_x, new_y));
@@ -620,9 +621,6 @@ impl GraphicsSystem {
         events_loop: &EventsLoop,
         swaphchain_flag: Arc<AtomicBool>,
     ) -> Result<GraphicsSystem, Box<dyn std::error::Error>> {
-        // The start of this example is exactly the same as `triangle`. You should read the
-        // `triangle` example if you haven't done so yet.
-
         let extensions = vulkano_win::required_extensions();
         let instance = Instance::new(None, &extensions, None)?;
 
@@ -641,7 +639,7 @@ impl GraphicsSystem {
         let queue_family = physical
             .queue_families()
             .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
-            .unwrap();
+            .ok_or(NoneError)?;
 
         let device_ext = DeviceExtensions {
             khr_swapchain: true,
@@ -655,7 +653,7 @@ impl GraphicsSystem {
         )?;
         let queue = queues.next().ok_or(NoneError)?;
 
-        *VIEWPORT_SIZE.lock().unwrap() = surface.window().get_inner_size().unwrap().into();
+        *VIEWPORT_SIZE.lock()? = surface.window().get_inner_size().ok_or(NoneError)?.into();
 
         let (swapchain, images) = {
             let caps = surface.capabilities(physical)?;
@@ -747,7 +745,7 @@ impl GraphicsSystem {
 
         let mut dynamic_state = DynamicState::none();
         let framebuffers =
-            window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state);
+            window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state)?;
 
         let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(
             pipeline.clone() as Arc<dyn PipelineLayoutAbstract + Send + Sync>,
@@ -795,7 +793,7 @@ impl GraphicsSystem {
             if data.position != Some(new_position) {
                 data.set_position(new_position, self.device.clone())?;
             }
-            let position = data.position.unwrap();
+            let position = data.position.ok_or(NoneError)?;
             let vertex_buffer = data.vertex_buffer.clone().unwrap_or_else(|| {
                 let vertex_buffer = data
                     .create_vertex_buffer(position, self.device.clone())
@@ -827,50 +825,31 @@ impl GraphicsSystem {
             previous_frame_end,
         ))
     }
-}
 
-impl Scriptable for Graphics {
-    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
-
-    fn name() -> &'static str {
-        "image"
-    }
-}
-
-impl<'a> System<'a> for GraphicsSystem {
-    type SystemData = (
-        ReadStorage<'a, GameObjectComponent<Position>>,
-        WriteStorage<'a, GameObjectComponent<Graphics>>,
-    );
-
-    fn run(&mut self, (graphics, positions): Self::SystemData) {
+    fn do_run(
+        &mut self,
+        (graphics, positions): <Self as System>::SystemData,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
         if self.recreate_swapchain.load(Ordering::Relaxed) {
             let dimensions = if let Some(dimensions) = window.get_inner_size() {
                 let dimensions: (u32, u32) =
                     dimensions.to_physical(window.get_hidpi_factor()).into();
-                *VIEWPORT_SIZE.lock().unwrap() = dimensions;
+                *VIEWPORT_SIZE.lock()? = dimensions;
                 [dimensions.0, dimensions.1]
             } else {
-                return;
+                return Ok(());
             };
 
-            let (new_swapchain, new_images) =
-                match self.swapchain.recreate_with_dimension(dimensions) {
-                    Ok(r) => r,
-                    Err(err) => {
-                        error!("Failed to recreate swapchain: {}", err);
-                        return;
-                    }
-                };
+            let (new_swapchain, new_images) = self.swapchain.recreate_with_dimension(dimensions)?;
 
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(
                 &new_images,
                 self.render_pass.clone(),
                 &mut self.dynamic_state,
-            );
+            )?;
 
             self.recreate_swapchain.store(false, Ordering::Relaxed);
         }
@@ -880,31 +859,20 @@ impl<'a> System<'a> for GraphicsSystem {
             Ok(r) => r,
             Err(AcquireError::OutOfDate) => {
                 self.recreate_swapchain.store(true, Ordering::Relaxed);
-                return;
+                return Ok(());
             }
-            Err(err) => {
-                error!("Failed to aquire next swapchain image: {}", err);
-                return;
-            }
+            Err(err) => return Err(Box::new(err)),
         };
 
-        let (cb, previous_frame_end) = match self.build_render_pass(positions, graphics, image_num)
-        {
-            Ok(cb) => cb,
-            Err(e) => {
-                error!("Failed to build render pass: {}", e);
-                return;
-            }
-        };
+        let (cb, previous_frame_end) = self.build_render_pass(positions, graphics, image_num)?;
 
         let future = previous_frame_end
             .join(future)
-            .then_execute(self.queue.clone(), cb)
-            .unwrap()
+            .then_execute(self.queue.clone(), cb)?
             .then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
             .then_signal_fence_and_flush();
 
-        match future {
+        Ok(match future {
             Ok(future) => {
                 if cfg!(target_os = "macos") {
                     // Workaround for moltenvk issue (hang on close)
@@ -921,6 +889,28 @@ impl<'a> System<'a> for GraphicsSystem {
                 error!("{:?}", e);
                 self.previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
             }
+        })
+    }
+}
+
+impl Scriptable for Graphics {
+    fn add_methods<'lua, M: MethodAdder<'lua, Self>>(_methods: &mut M) {}
+
+    fn name() -> &'static str {
+        "image"
+    }
+}
+
+impl<'a> System<'a> for GraphicsSystem {
+    type SystemData = (
+        ReadStorage<'a, GameObjectComponent<Position>>,
+        WriteStorage<'a, GameObjectComponent<Graphics>>,
+    );
+
+    fn run(&mut self, data: Self::SystemData) {
+        match self.do_run(data) {
+            Ok(()) => (),
+            Err(e) => error!("Error in graphics system: {:?}", e),
         }
     }
 }
@@ -930,7 +920,7 @@ fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage<Window>>],
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
     dynamic_state: &mut DynamicState,
-) -> Vec<Arc<dyn FramebufferAbstract + Send + Sync>> {
+) -> Result<Vec<Arc<dyn FramebufferAbstract + Send + Sync>>, Box<dyn std::error::Error>> {
     let dimensions = images[0].dimensions();
 
     let viewport = Viewport {
@@ -943,15 +933,13 @@ fn window_size_dependent_setup(
     images
         .iter()
         .map(|image| {
-            Arc::new(
+            Ok(Arc::new(
                 Framebuffer::start(render_pass.clone())
-                    .add(image.clone())
-                    .unwrap()
-                    .build()
-                    .unwrap(),
-            ) as Arc<dyn FramebufferAbstract + Send + Sync>
+                    .add(image.clone())?
+                    .build()?,
+            ) as Arc<dyn FramebufferAbstract + Send + Sync>)
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()
 }
 
 mod vs {
