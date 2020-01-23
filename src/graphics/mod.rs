@@ -1,16 +1,10 @@
 use std::convert::TryInto;
-use std::fs::File;
-use std::io::{BufReader, Read};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
-use image::{DynamicImage, ImageBuffer, Rgba};
-
-pub use image::ImageFormat;
-
-use rusttype::{point, Font, Scale};
+use rusttype::Font;
 
 use nalgebra as na;
 
@@ -37,18 +31,16 @@ use vulkano_win::VkSurfaceBuild;
 use winit::{EventsLoop, Window, WindowBuilder};
 
 use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
+use crate::error::NoneError;
 use crate::position::Position;
 
 pub mod anim;
 mod draw2d;
+mod image;
 pub mod sprite;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
-}
-
-fn load_file<P: AsRef<std::path::Path>>(path: P) -> std::io::Result<BufReader<File>> {
-    Ok(BufReader::new(File::open(path)?))
 }
 
 fn remap(x: f32, from_lo: f32, from_hi: f32, to_lo: f32, to_hi: f32) -> f32 {
@@ -105,7 +97,7 @@ fn scale_matrix(x_scale: f32, y_scale: f32) -> na::Matrix3<f32> {
 
 #[derive(Clone)]
 pub struct Graphics {
-    image: ImageBuffer<image::Rgba<u8>, Vec<u8>>,
+    image: image::Image,
     position: Option<(f32, f32)>,
     scale: f32,
     rotation: f32,
@@ -130,7 +122,7 @@ pub struct GraphicsBuilder {
 }
 
 enum ImageDesc {
-    Image(ImageBuffer<image::Rgba<u8>, Vec<u8>>),
+    Image(image::Image),
     ImagePath(std::path::PathBuf, image::ImageFormat),
     TextWithFont {
         text: String,
@@ -144,88 +136,6 @@ enum ImageDesc {
         color: (u8, u8, u8),
         size: f32,
     },
-}
-
-fn load_image_from_path<P: AsRef<std::path::Path>>(
-    path: P,
-    format: ImageFormat,
-) -> Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
-    let image = image::load(load_file(path)?, format)?.to_rgba();
-    Ok(image)
-}
-
-fn layout_text(
-    text: String,
-    font: Font,
-    color: (u8, u8, u8),
-    size: f32,
-) -> Result<ImageBuffer<image::Rgba<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
-    let scale = Scale::uniform(size);
-    let v_metrics = font.v_metrics(scale);
-    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
-
-    let glyphs: Vec<_> = text
-        .split('\n')
-        .enumerate()
-        .flat_map(|(n, line)| {
-            font.layout(
-                line,
-                scale,
-                point(20.0, 20.0 + v_metrics.ascent + advance_height * n as f32),
-            )
-        })
-        .collect();
-
-    let glyphs_width = {
-        let min_x = glyphs
-            .first()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
-            .ok_or(NoneError)?;
-        let max_x = glyphs
-            .last()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
-            .ok_or(NoneError)?;
-        (max_x - min_x) as u32
-    };
-
-    let glyphs_height = {
-        let min_y = glyphs
-            .first()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
-            .ok_or(NoneError)?;
-        let max_y = glyphs
-            .last()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
-            .ok_or(NoneError)?;
-        (max_y - min_y) as u32
-    };
-
-    let mut image = DynamicImage::new_rgba8(glyphs_width + 40, glyphs_height + 40).to_rgba();
-
-    for glyph in glyphs {
-        if let Some(bounding_box) = glyph.pixel_bounding_box() {
-            // Draw the glyph into the image per-pixel by using the draw closure
-            glyph.draw(|x, y, v| {
-                image.put_pixel(
-                    // Offset the position by the glyph bounding box
-                    x + bounding_box.min.x as u32,
-                    y + bounding_box.min.y as u32,
-                    // Turn the coverage into an alpha value
-                    Rgba([color.0, color.1, color.2, (v * 255.0) as u8]),
-                )
-            });
-        }
-    }
-
-    Ok(image)
-}
-
-fn load_font<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<Font<'static>, Box<dyn std::error::Error>> {
-    let mut font_data = Vec::new();
-    load_file(path)?.read_to_end(&mut font_data)?;
-    Ok(Font::from_bytes(font_data)?)
 }
 
 impl GraphicsBuilder {
@@ -269,12 +179,16 @@ impl GraphicsBuilder {
         self
     }
 
-    pub fn image(mut self, image: DynamicImage) -> Self {
-        self.image = Some(ImageDesc::Image(image.to_rgba()));
+    pub fn image(mut self, image: image::Image) -> Self {
+        self.image = Some(ImageDesc::Image(image));
         self
     }
 
-    pub fn load_image<P: AsRef<std::path::Path>>(mut self, path: P, format: ImageFormat) -> Self {
+    pub fn load_image<P: AsRef<std::path::Path>>(
+        mut self,
+        path: P,
+        format: image::ImageFormat,
+    ) -> Self {
         self.image = Some(ImageDesc::ImagePath(path.as_ref().to_path_buf(), format));
         self
     }
@@ -316,19 +230,19 @@ impl GraphicsBuilder {
             .image
             .map(|x| match x {
                 ImageDesc::Image(image) => Ok(image),
-                ImageDesc::ImagePath(path, format) => load_image_from_path(path, format),
+                ImageDesc::ImagePath(path, format) => image::Image::load(path, format),
                 ImageDesc::TextWithFont {
                     text,
                     font,
                     color,
                     size,
-                } => Ok(layout_text(text, font, color, size)?),
+                } => Ok(image::Image::text(text, font, color, size)?),
                 ImageDesc::TextWithFontPath {
                     text,
                     font_path,
                     color,
                     size,
-                } => Ok(layout_text(text, load_font(font_path)?, color, size)?),
+                } => Ok(image::Image::load_text(text, font_path, color, size)?),
             })
             .transpose()?;
 
@@ -501,7 +415,7 @@ impl Graphics {
         let dimensions = self.image.dimensions();
         let image_dimensions = (dimensions.0 as f64, dimensions.1 as f64);
 
-        let image_data = self.image.clone().into_raw();
+        let image_data = self.image.data();
         let (texture, tex_future) = ImmutableImage::from_iter(
             image_data.iter().cloned(),
             Dimensions::Dim2d {
@@ -595,18 +509,7 @@ pub struct GraphicsSystem {
 }
 
 #[derive(Debug)]
-struct NoneError;
-
-impl std::fmt::Display for NoneError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "No value found")
-    }
-}
-
-#[derive(Debug)]
 struct NoWindowError;
-
-impl std::error::Error for NoneError {}
 
 impl std::fmt::Display for NoWindowError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {

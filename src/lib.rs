@@ -29,6 +29,7 @@ use winit::EventsLoop;
 use specs::prelude::*;
 
 mod core;
+mod error;
 pub mod graphics;
 pub mod position;
 pub mod script;

@@ -1,31 +1,28 @@
-use image::{DynamicImage, GenericImageView};
 use serde::Deserialize;
 use specs::prelude::*;
 use std::collections::HashMap;
-use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
 use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
 use crate::graphics;
 use crate::graphics::anim;
+use crate::graphics::image::{Image, ImageFormat};
 
 pub struct SpriteSystem;
 
 #[derive(Debug)]
-struct NoSpriteTypeFound {
+struct SpriteTypeNotFoundError {
     sprite_type: String,
 }
 
-impl std::fmt::Display for NoSpriteTypeFound {
+impl std::fmt::Display for SpriteTypeNotFoundError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "No sprite type [{}] could be found!", self.sprite_type)
     }
 }
 
-impl std::error::Error for NoSpriteTypeFound {}
+impl std::error::Error for SpriteTypeNotFoundError {}
 
 impl SpriteSystem {
     pub fn new() -> SpriteSystem {
@@ -73,12 +70,12 @@ impl SpriteConfig {
     fn create_sprite_inner<P: AsRef<std::path::Path>, S1: AsRef<str>, S2: AsRef<str>>(
         &self,
         path: P,
-        format: image::ImageFormat,
+        format: ImageFormat,
         sprite_type: S1,
         default: S2,
         scale: Option<f32>,
     ) -> Result<Sprite, Box<dyn std::error::Error>> {
-        let sprite_sheet = image::load(BufReader::new(File::open(path)?), format)?;
+        let sprite_sheet = Image::load(path, format)?;
         Ok(self
             .types
             .get(sprite_type.as_ref())
@@ -90,7 +87,7 @@ impl SpriteConfig {
                 )
             })
             .transpose()?
-            .ok_or(Box::new(NoSpriteTypeFound {
+            .ok_or(Box::new(SpriteTypeNotFoundError {
                 sprite_type: String::from(sprite_type.as_ref()),
             }))?)
     }
@@ -102,7 +99,7 @@ impl SpriteConfig {
         sprite_type: S1,
         default: S2,
         scale: f32,
-    ) -> Result<Sprite, Box<dyn Error>> {
+    ) -> Result<Sprite, Box<dyn std::error::Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, Some(scale))
     }
 
@@ -112,7 +109,7 @@ impl SpriteConfig {
         format: image::ImageFormat,
         sprite_type: S1,
         default: S2,
-    ) -> Result<Sprite, Box<dyn Error>> {
+    ) -> Result<Sprite, Box<dyn std::error::Error>> {
         self.create_sprite_inner(path, format, sprite_type, default, None)
     }
 }
@@ -128,7 +125,7 @@ struct SpriteTypeInfo {
 impl SpriteTypeInfo {
     fn create_sprite(
         &self,
-        mut sprite_sheet: DynamicImage,
+        mut sprite_sheet: Image,
         default: String,
         scale: f32,
     ) -> Result<Sprite, Box<dyn std::error::Error>> {
@@ -143,7 +140,10 @@ impl SpriteTypeInfo {
                     builder = builder.add_frame(
                         frame.frame_run,
                         graphics::Graphics::new()
-                            .image(self.get_image_by_index(&mut sprite_sheet, frame.sprite_number))
+                            .image(sprite_sheet.get_image_by_index(
+                                (self.sprite_width, self.sprite_height),
+                                frame.sprite_number,
+                            ))
                             .scale(scale)
                             .build()?,
                     );
@@ -162,16 +162,6 @@ impl SpriteTypeInfo {
             animations,
             current: default,
         })
-    }
-
-    fn get_image_by_index(&self, sprite_sheet: &mut DynamicImage, index: u32) -> DynamicImage {
-        let (width, _) = sprite_sheet.dimensions();
-        let sheet_width = width / self.sprite_width;
-        let (x, y) = (
-            (index % sheet_width) * self.sprite_width,
-            (index / sheet_width) * self.sprite_height,
-        );
-        sprite_sheet.crop(x, y, self.sprite_width, self.sprite_height)
     }
 }
 

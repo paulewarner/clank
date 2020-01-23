@@ -64,6 +64,10 @@ impl TileMap {
         let file = std::io::BufReader::new(std::fs::File::open(path)?);
         Ok(serde_json::from_reader(file)?)
     }
+
+    pub fn build_image(self) -> Result<image::DynamicImage, Box<dyn std::error::Error>> {
+
+    }
 }
 
 #[cfg(test)]
