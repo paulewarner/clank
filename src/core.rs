@@ -334,10 +334,6 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
 
         let mut done = false;
 
-        let mut average_fps;
-        let mut counted_frames = 0.0;
-
-        let frame_start = Instant::now();
         let swapchain_flag = self.swapchain_flag.clone();
 
         let handle = EngineHandle::new(&mut self.world, self.setters.clone(), self.getters.clone());
@@ -376,9 +372,6 @@ impl<'a, 'b> ClankEngine<'a, 'b> {
                 return;
             }
 
-            counted_frames += 1.0;
-            average_fps = counted_frames / frame_start.elapsed().as_secs() as f64;
-            trace!("current fps {}", average_fps);
             if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
                 sleep(Duration::from_millis(
                     (SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64,
