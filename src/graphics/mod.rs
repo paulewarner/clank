@@ -36,8 +36,9 @@ use crate::position::Position;
 
 pub mod anim;
 mod draw2d;
-mod image;
+mod imagewrapper;
 pub mod sprite;
+pub mod tilemap;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
@@ -97,7 +98,7 @@ fn scale_matrix(x_scale: f32, y_scale: f32) -> na::Matrix3<f32> {
 
 #[derive(Clone)]
 pub struct Graphics {
-    image: image::Image,
+    image: imagewrapper::Image,
     position: Option<(f32, f32)>,
     scale: f32,
     rotation: f32,
@@ -122,7 +123,7 @@ pub struct GraphicsBuilder {
 }
 
 enum ImageDesc {
-    Image(image::Image),
+    Image(imagewrapper::Image),
     ImagePath(std::path::PathBuf, image::ImageFormat),
     TextWithFont {
         text: String,
@@ -179,7 +180,7 @@ impl GraphicsBuilder {
         self
     }
 
-    pub fn image(mut self, image: image::Image) -> Self {
+    pub fn image(mut self, image: imagewrapper::Image) -> Self {
         self.image = Some(ImageDesc::Image(image));
         self
     }
@@ -230,19 +231,23 @@ impl GraphicsBuilder {
             .image
             .map(|x| match x {
                 ImageDesc::Image(image) => Ok(image),
-                ImageDesc::ImagePath(path, format) => image::Image::load(path, format),
+                ImageDesc::ImagePath(path, format) => {
+                    imagewrapper::Image::load_with_ext(path, format)
+                }
                 ImageDesc::TextWithFont {
                     text,
                     font,
                     color,
                     size,
-                } => Ok(image::Image::text(text, font, color, size)?),
+                } => Ok(imagewrapper::Image::text(text, font, color, size)?),
                 ImageDesc::TextWithFontPath {
                     text,
                     font_path,
                     color,
                     size,
-                } => Ok(image::Image::load_text(text, font_path, color, size)?),
+                } => Ok(imagewrapper::Image::load_text(
+                    text, font_path, color, size,
+                )?),
             })
             .transpose()?;
 

@@ -5,7 +5,7 @@ fn main() {
             let clank = clank::new()
                 .with_component(
                     clank::graphics::Graphics::new()
-                        .load_image("image.png", image::ImageFormat::PNG)
+                        .load_image("image.png", image::ImageFormat::Png)
                         .build()
                         .unwrap(),
                 )

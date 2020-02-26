@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
 use crate::graphics;
 use crate::graphics::anim;
-use crate::graphics::image::{Image, ImageFormat};
+use crate::graphics::imagewrapper::{Image, ImageFormat};
 
 pub struct SpriteSystem;
 
@@ -75,7 +75,7 @@ impl SpriteConfig {
         default: S2,
         scale: Option<f32>,
     ) -> Result<Sprite, Box<dyn std::error::Error>> {
-        let sprite_sheet = Image::load(path, format)?;
+        let sprite_sheet = Image::load_with_ext(path, format)?;
         Ok(self
             .types
             .get(sprite_type.as_ref())

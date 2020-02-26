@@ -15,7 +15,30 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn load<P: AsRef<std::path::Path>>(
+    pub fn wrap(raw: image::DynamicImage) -> Image {
+        Image { raw }
+    }
+
+    pub fn load<P: AsRef<std::path::Path>>(path: P) -> Result<Image, Box<dyn std::error::Error>> {
+        let ext = path
+            .as_ref()
+            .extension()
+            .and_then(|x| x.to_str())
+            .ok_or(crate::error::NoneError)?
+            .to_lowercase();
+
+        let format = match ext.as_ref() {
+            "png" => ImageFormat::Png,
+            "jpeg" | "jpg" => ImageFormat::Jpeg,
+            "bmp" => ImageFormat::Bmp,
+            "webp" => ImageFormat::WebP,
+            _ => return Err(Box::new(crate::error::NoneError)),
+        };
+
+        Image::load_with_ext(path, format)
+    }
+
+    pub fn load_with_ext<P: AsRef<std::path::Path>>(
         path: P,
         format: ImageFormat,
     ) -> Result<Image, Box<dyn std::error::Error>> {
@@ -102,14 +125,6 @@ impl Image {
         })
     }
 
-    pub fn dimensions(&self) -> (u32, u32) {
-        self.raw.dimensions()
-    }
-
-    pub fn data(&self) -> Vec<u8> {
-        self.raw.clone().to_rgba().into_raw()
-    }
-
     pub fn get_image_by_index(&mut self, (width, height): (u32, u32), index: u32) -> Image {
         let (s_width, _) = self.dimensions();
         let sheet_width = s_width / width;
@@ -120,6 +135,31 @@ impl Image {
         Image {
             raw: self.raw.crop(x, y, width, height),
         }
+    }
+
+    pub fn dimensions(&self) -> (u32, u32) {
+        self.raw.dimensions()
+    }
+
+    pub fn data(&self) -> Vec<u8> {
+        self.raw.clone().to_rgba().into_raw()
+    }
+
+    pub fn raw<'a>(&'a self) -> &'a image::DynamicImage {
+        &self.raw
+    }
+
+    pub fn into_raw(self) -> image::DynamicImage {
+        self.raw
+    }
+
+    pub fn tiles(&mut self, width: u32, height: u32) -> Vec<Image> {
+        let (s_width, s_height) = self.dimensions();
+        let index_count = s_width / width * s_height / height;
+
+        (0..index_count)
+            .map(|i| self.get_image_by_index((width, height), i))
+            .collect()
     }
 }
 
