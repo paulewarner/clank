@@ -28,7 +28,8 @@ use vulkano::sync::{FlushError, GpuFuture};
 
 use vulkano_win::VkSurfaceBuild;
 
-use winit::{EventsLoop, Window, WindowBuilder};
+use winit::event_loop::EventLoop;
+use winit::window::{Window, WindowBuilder};
 
 use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
 use crate::error::NoneError;
@@ -371,6 +372,7 @@ impl Graphics {
         let buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
             device,
             BufferUsage::all(),
+            false,
             [
                 Vertex {
                     position: (transform * lower_left)
@@ -507,9 +509,7 @@ pub struct GraphicsSystem {
         >,
     >,
     render_pass: Arc<dyn RenderPassAbstract + Send + Sync>,
-    descriptor_pool: Arc<
-        Mutex<FixedSizeDescriptorSetsPool<Arc<dyn PipelineLayoutAbstract + Send + Sync + 'static>>>,
-    >,
+    descriptor_pool: Arc<Mutex<FixedSizeDescriptorSetsPool>>,
     sampler: Arc<Sampler>,
 }
 
@@ -526,7 +526,7 @@ impl std::error::Error for NoWindowError {}
 
 impl GraphicsSystem {
     pub fn new(
-        events_loop: &EventsLoop,
+        events_loop: &EventLoop<()>,
         swaphchain_flag: Arc<AtomicBool>,
     ) -> Result<GraphicsSystem, Box<dyn std::error::Error>> {
         let extensions = vulkano_win::required_extensions();
@@ -561,7 +561,11 @@ impl GraphicsSystem {
         )?;
         let queue = queues.next().ok_or(NoneError)?;
 
-        *VIEWPORT_SIZE.lock()? = surface.window().get_inner_size().ok_or(NoneError)?.into();
+        let size = surface.window().inner_size();
+        let new_width = size.width;
+        let new_height = size.height;
+
+        *VIEWPORT_SIZE.lock()? = (new_width, new_height);
 
         let (swapchain, images) = {
             let caps = surface.capabilities(physical)?;
@@ -574,15 +578,9 @@ impl GraphicsSystem {
                 .ok_or(NoneError)?;
             let format = caps.supported_formats[0].0;
 
-            let initial_dimensions = if let Some(dimensions) = window.get_inner_size() {
-                // convert to physical pixels
-                let dimensions: (u32, u32) =
-                    dimensions.to_physical(window.get_hidpi_factor()).into();
-                [dimensions.0, dimensions.1]
-            } else {
-                // The window no longer exists so exit the application.
-                return Err(Box::new(NoWindowError));
-            };
+            let size = window.inner_size();
+
+            let initial_dimensions = [size.width, size.height];
 
             Swapchain::new(
                 device.clone(),
@@ -596,8 +594,9 @@ impl GraphicsSystem {
                 SurfaceTransform::Identity,
                 alpha,
                 PresentMode::Fifo,
+                vulkano::swapchain::FullscreenExclusive::Default,
                 true,
-                None,
+                vulkano::swapchain::ColorSpace::SrgbNonLinear,
             )?
         };
 
@@ -655,10 +654,9 @@ impl GraphicsSystem {
         let framebuffers =
             window_size_dependent_setup(&images, render_pass.clone(), &mut dynamic_state)?;
 
-        let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(
-            pipeline.clone() as Arc<dyn PipelineLayoutAbstract + Send + Sync>,
-            0,
-        )));
+        let layout = pipeline.descriptor_set_layout(0).ok_or(NoneError)?.clone();
+
+        let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(layout)));
 
         Ok(GraphicsSystem {
             recreate_swapchain: swaphchain_flag,
@@ -741,16 +739,13 @@ impl GraphicsSystem {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
         if self.recreate_swapchain.load(Ordering::Relaxed) {
-            let dimensions = if let Some(dimensions) = window.get_inner_size() {
-                let dimensions: (u32, u32) =
-                    dimensions.to_physical(window.get_hidpi_factor()).into();
-                *VIEWPORT_SIZE.lock()? = dimensions;
-                [dimensions.0, dimensions.1]
-            } else {
-                return Ok(());
-            };
+            let size = window.inner_size();
+            let dimensions = (size.width, size.height);
+            *VIEWPORT_SIZE.lock()? = dimensions;
 
-            let (new_swapchain, new_images) = self.swapchain.recreate_with_dimension(dimensions)?;
+            let (new_swapchain, new_images) = self
+                .swapchain
+                .recreate_with_dimensions([size.width, size.height])?;
 
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(
@@ -762,15 +757,19 @@ impl GraphicsSystem {
             self.recreate_swapchain.store(false, Ordering::Relaxed);
         }
 
-        let (image_num, future) = match swapchain::acquire_next_image(self.swapchain.clone(), None)
-        {
-            Ok(r) => r,
-            Err(AcquireError::OutOfDate) => {
-                self.recreate_swapchain.store(true, Ordering::Relaxed);
-                return Ok(());
-            }
-            Err(err) => return Err(Box::new(err)),
-        };
+        let (image_num, recreate_swapchain_needed, future) =
+            match swapchain::acquire_next_image(self.swapchain.clone(), None) {
+                Ok(r) => r,
+                Err(AcquireError::OutOfDate) => {
+                    self.recreate_swapchain.store(true, Ordering::Relaxed);
+                    return Ok(());
+                }
+                Err(err) => return Err(Box::new(err)),
+            };
+
+        if recreate_swapchain_needed {
+            self.recreate_swapchain.store(true, Ordering::Relaxed);
+        }
 
         let (cb, previous_frame_end) = self.build_render_pass(positions, graphics, image_num)?;
 

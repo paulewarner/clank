@@ -11,7 +11,7 @@ pub enum Value {
     Str(String),
     OptionalStr(Option<String>),
     Bool(bool),
-    OptionalBool(Option<bool>)
+    OptionalBool(Option<bool>),
 }
 
 impl<'lua> ToLua<'lua> for Value {
@@ -26,7 +26,7 @@ impl<'lua> ToLua<'lua> for Value {
                 .map(|x| context.create_string(&x).map(|y| LuaValue::String(y)))
                 .unwrap_or(Ok(LuaValue::Nil))?,
             Value::Bool(b) => LuaValue::Boolean(b),
-            Value::OptionalBool(i) => i.map(|x| LuaValue::Boolean(x)).unwrap_or(LuaValue::Nil)
+            Value::OptionalBool(i) => i.map(|x| LuaValue::Boolean(x)).unwrap_or(LuaValue::Nil),
         })
     }
 }
@@ -42,18 +42,22 @@ fn make_type_error(from: &'static str, to: &'static str) -> LuaError {
 fn get_int<'lua>(context: LuaContext<'lua>, v: LuaValue<'lua>) -> Result<Option<i64>, LuaError> {
     match v {
         LuaValue::Nil => Ok(None),
-        _ => Ok(Some(context
+        _ => Ok(Some(
+            context
                 .coerce_integer(v)
-                .and_then(|x| x.ok_or(make_type_error("Nil", "Int")))?)) // Must always have value here.
+                .and_then(|x| x.ok_or(make_type_error("Nil", "Int")))?,
+        )), // Must always have value here.
     }
 }
 
 fn get_float<'lua>(context: LuaContext<'lua>, v: LuaValue<'lua>) -> Result<Option<f64>, LuaError> {
     match v {
         LuaValue::Nil => Ok(None),
-        _ => Ok(Some(context
+        _ => Ok(Some(
+            context
                 .coerce_number(v)
-                .and_then(|x| x.ok_or(make_type_error("Nil", "Float")))?)) // Must always have value here.
+                .and_then(|x| x.ok_or(make_type_error("Nil", "Float")))?,
+        )), // Must always have value here.
     }
 }
 
@@ -61,7 +65,7 @@ fn get_str<'lua>(v: LuaValue<'lua>) -> Result<Option<LuaString<'lua>>, LuaError>
     match v {
         LuaValue::Nil => Ok(None),
         LuaValue::String(s) => Ok(Some(s)),
-        _ => Err(make_type_error("Nil", "String"))
+        _ => Err(make_type_error("Nil", "String")),
     }
 }
 
@@ -73,13 +77,11 @@ impl Value {
     ) -> Result<Value, LuaError> {
         match self {
             Value::Int(_) => Ok(Value::Int(
-                get_int(context, value)
-                    .and_then(|x| x.ok_or(make_type_error("Nil", "Int")))?,
+                get_int(context, value).and_then(|x| x.ok_or(make_type_error("Nil", "Int")))?,
             )),
             Value::OptionalInt(_) => Ok(Value::OptionalInt(get_int(context, value)?)),
             Value::Float(_) => Ok(Value::Float(
-                get_float(context, value)
-                    .and_then(|x| x.ok_or(make_type_error("Nil", "Float")))?,
+                get_float(context, value).and_then(|x| x.ok_or(make_type_error("Nil", "Float")))?,
             )),
             Value::OptionalFloat(_) => Ok(Value::OptionalFloat(get_float(context, value)?)),
             Value::Str(_) => Ok(Value::Str(
@@ -95,13 +97,13 @@ impl Value {
             )),
             Value::Bool(_) => match value {
                 LuaValue::Boolean(b) => Ok(Value::Bool(b)),
-                _ => Err(make_type_error("other", "bool"))
+                _ => Err(make_type_error("other", "bool")),
             },
             Value::OptionalBool(_) => match value {
                 LuaValue::Boolean(b) => Ok(Value::OptionalBool(Some(b))),
                 LuaValue::Nil => Ok(Value::OptionalBool(None)),
-                _ => Err(make_type_error("other", "Optional Bool"))
-            }
+                _ => Err(make_type_error("other", "Optional Bool")),
+            },
         }
     }
 }
@@ -152,7 +154,7 @@ impl Field {
     fn new<S: AsRef<str>>(name: S, value: Value) -> Field {
         Field {
             name: String::from(name.as_ref()),
-            value
+            value,
         }
     }
 }
@@ -291,12 +293,20 @@ fn newindex_private<'lua>(
 mod tests {
     use super::*;
 
-    fn lua_test<F: for <'lua> FnOnce(LuaContext<'lua>)>(f: F) {
+    fn lua_test<F: for<'lua> FnOnce(LuaContext<'lua>)>(f: F) {
         let lua = Lua::new();
         lua.context(f);
     }
 
-    fn test_script_state<C: AsRef<[u8]>, F: for <'lua> FnOnce(LuaContext<'lua>, ScriptState, LuaValue<'lua>)>(fields: Vec<Field>, chunk: C, f: F, should_fail: bool) {
+    fn test_script_state<
+        C: AsRef<[u8]>,
+        F: for<'lua> FnOnce(LuaContext<'lua>, ScriptState, LuaValue<'lua>),
+    >(
+        fields: Vec<Field>,
+        chunk: C,
+        f: F,
+        should_fail: bool,
+    ) {
         lua_test(|context| {
             println!("{}", std::str::from_utf8(chunk.as_ref()).unwrap());
             let state = ScriptState::new(ScriptFields::new(fields));
@@ -308,7 +318,7 @@ mod tests {
                         panic!("Unexpected success: {:?}", state.state.lock());
                     }
                     f(context, state, r);
-                },
+                }
                 Err(e) => {
                     if !should_fail {
                         panic!("Function test failed with error {:?}", e);
@@ -318,24 +328,32 @@ mod tests {
         });
     }
 
-    fn test_assignment<S: AsRef<str>>(starting_value: Value, ending_value: Value, assignment: S, should_fail: bool) {
+    fn test_assignment<S: AsRef<str>>(
+        starting_value: Value,
+        ending_value: Value,
+        assignment: S,
+        should_fail: bool,
+    ) {
         test_script_state(
-            vec![
-                Field::new("a", starting_value)
-            ],
-            format!(r#"
+            vec![Field::new("a", starting_value)],
+            format!(
+                r#"
             function(test)
                 test.a = {}
             end
-            "#, assignment.as_ref()),
+            "#,
+                assignment.as_ref()
+            ),
             |_context, state, ret| {
                 match ret {
                     LuaValue::Nil => (),
-                    _ => panic!("Expected set to return nil")
+                    _ => panic!("Expected set to return nil"),
                 };
                 let s = state.state.lock().unwrap();
                 assert_eq!(s.get("a").unwrap(), &ending_value)
-            }, should_fail);
+            },
+            should_fail,
+        );
     }
 
     #[test]
@@ -344,7 +362,7 @@ mod tests {
             let i = 1;
             match Value::Int(i).to_lua(context).unwrap() {
                 LuaValue::Integer(n) => assert_eq!(n, i),
-                _ => panic!("Integer {} converted to invalid type", i)
+                _ => panic!("Integer {} converted to invalid type", i),
             };
         });
     }
@@ -355,11 +373,11 @@ mod tests {
             let i = 1;
             match Value::OptionalInt(Some(i)).to_lua(context).unwrap() {
                 LuaValue::Integer(n) => assert_eq!(n, i),
-                _ => panic!("Optional Int {} converted to invalid type", i)
+                _ => panic!("Optional Int {} converted to invalid type", i),
             };
             match Value::OptionalInt(None).to_lua(context).unwrap() {
                 LuaValue::Nil => (),
-                _ => panic!("Optional Int (nil) converted to invalid type")
+                _ => panic!("Optional Int (nil) converted to invalid type"),
             };
         });
     }
@@ -370,7 +388,7 @@ mod tests {
             let i = 1.0;
             match Value::Float(i).to_lua(context).unwrap() {
                 LuaValue::Number(n) => assert_eq!(n, i),
-                _ => panic!("Float {} converted to invalid type", i)
+                _ => panic!("Float {} converted to invalid type", i),
             };
         });
     }
@@ -381,11 +399,11 @@ mod tests {
             let i = 1.0;
             match Value::OptionalFloat(Some(i)).to_lua(context).unwrap() {
                 LuaValue::Number(n) => assert_eq!(n, i),
-                _ => panic!("Optional Int {} converted to invalid type", i)
+                _ => panic!("Optional Int {} converted to invalid type", i),
             };
             match Value::OptionalFloat(None).to_lua(context).unwrap() {
                 LuaValue::Nil => (),
-                _ => panic!("Optional Int (nil) converted to invalid type")
+                _ => panic!("Optional Int (nil) converted to invalid type"),
             };
         });
     }
@@ -396,7 +414,7 @@ mod tests {
             let i = String::from("string");
             match Value::Str(i.clone()).to_lua(context).unwrap() {
                 LuaValue::String(n) => assert_eq!(n, i),
-                _ => panic!("String {} converted to invalid type", i)
+                _ => panic!("String {} converted to invalid type", i),
             };
         });
     }
@@ -407,11 +425,11 @@ mod tests {
             let i = String::from("string");
             match Value::OptionalStr(Some(i.clone())).to_lua(context).unwrap() {
                 LuaValue::String(n) => assert_eq!(n, i),
-                _ => panic!("Optional String {} converted to invalid type", i)
+                _ => panic!("Optional String {} converted to invalid type", i),
             };
             match Value::OptionalStr(None).to_lua(context).unwrap() {
                 LuaValue::Nil => (),
-                _ => panic!("Optional String (nil) converted to invalid type")
+                _ => panic!("Optional String (nil) converted to invalid type"),
             };
         });
     }
@@ -423,12 +441,22 @@ mod tests {
 
     #[test]
     fn test_index_set_optional_none_to_int() {
-        test_assignment(Value::OptionalInt(None), Value::OptionalInt(Some(1)), "1", false);
+        test_assignment(
+            Value::OptionalInt(None),
+            Value::OptionalInt(Some(1)),
+            "1",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_optional_int_to_none() {
-        test_assignment(Value::OptionalInt(Some(1)), Value::OptionalInt(None), "nil", false);
+        test_assignment(
+            Value::OptionalInt(Some(1)),
+            Value::OptionalInt(None),
+            "nil",
+            false,
+        );
     }
 
     #[test]
@@ -438,27 +466,52 @@ mod tests {
 
     #[test]
     fn test_index_set_optional_none_to_float() {
-        test_assignment(Value::OptionalFloat(None), Value::OptionalFloat(Some(3.5)), "3.5", false);
+        test_assignment(
+            Value::OptionalFloat(None),
+            Value::OptionalFloat(Some(3.5)),
+            "3.5",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_optional_float_to_none() {
-        test_assignment(Value::OptionalFloat(Some(3.5)), Value::OptionalFloat(None), "nil", false);
+        test_assignment(
+            Value::OptionalFloat(Some(3.5)),
+            Value::OptionalFloat(None),
+            "nil",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_str() {
-        test_assignment(Value::Str(String::from("a")), Value::Str(String::from("b")), "\"b\"", false);
+        test_assignment(
+            Value::Str(String::from("a")),
+            Value::Str(String::from("b")),
+            "\"b\"",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_optional_none_to_str() {
-        test_assignment(Value::OptionalStr(None), Value::OptionalStr(Some(String::from("a"))), "\"a\"", false);
+        test_assignment(
+            Value::OptionalStr(None),
+            Value::OptionalStr(Some(String::from("a"))),
+            "\"a\"",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_optional_str_to_none() {
-        test_assignment(Value::OptionalStr(Some(String::from("a"))), Value::OptionalStr(None), "nil", false);
+        test_assignment(
+            Value::OptionalStr(Some(String::from("a"))),
+            Value::OptionalStr(None),
+            "nil",
+            false,
+        );
     }
 
     #[test]
@@ -468,12 +521,22 @@ mod tests {
 
     #[test]
     fn test_index_set_optional_none_to_bool() {
-        test_assignment(Value::OptionalBool(None), Value::OptionalBool(Some(true)), "true", false);
+        test_assignment(
+            Value::OptionalBool(None),
+            Value::OptionalBool(Some(true)),
+            "true",
+            false,
+        );
     }
 
     #[test]
     fn test_index_set_optional_bool_to_none() {
-        test_assignment(Value::OptionalBool(Some(true)), Value::OptionalBool(None), "nil", false);
+        test_assignment(
+            Value::OptionalBool(Some(true)),
+            Value::OptionalBool(None),
+            "nil",
+            false,
+        );
     }
 
     #[test]
@@ -483,7 +546,12 @@ mod tests {
 
     #[test]
     fn test_index_set_optional_int_fail() {
-        test_assignment(Value::OptionalInt(None), Value::OptionalStr(Some(String::from("a"))), "\"a\"", true);
+        test_assignment(
+            Value::OptionalInt(None),
+            Value::OptionalStr(Some(String::from("a"))),
+            "\"a\"",
+            true,
+        );
     }
 
     #[test]
@@ -493,16 +561,31 @@ mod tests {
 
     #[test]
     fn test_index_set_optional_float_fail() {
-        test_assignment(Value::OptionalFloat(None), Value::OptionalStr(Some(String::from("a"))), "\"a\"", true);
+        test_assignment(
+            Value::OptionalFloat(None),
+            Value::OptionalStr(Some(String::from("a"))),
+            "\"a\"",
+            true,
+        );
     }
 
     #[test]
     fn test_index_set_str_fail() {
-        test_assignment(Value::Str(String::from("a")), Value::OptionalStr(None), "nil", true);
+        test_assignment(
+            Value::Str(String::from("a")),
+            Value::OptionalStr(None),
+            "nil",
+            true,
+        );
     }
 
     #[test]
     fn test_index_set_optional_str_fail() {
-        test_assignment(Value::OptionalStr(None), Value::OptionalFloat(Some(1.0)), "1.0", true);
+        test_assignment(
+            Value::OptionalStr(None),
+            Value::OptionalFloat(Some(1.0)),
+            "1.0",
+            true,
+        );
     }
 }

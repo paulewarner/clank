@@ -8,7 +8,8 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use super::script::Event;
-use winit::{Event as WEvent, EventsLoop, WindowEvent};
+use winit::event::{Event as WEvent, WindowEvent};
+use winit::event_loop::EventLoop;
 
 use rlua::prelude::*;
 use specs::prelude::*;
@@ -288,152 +289,164 @@ pub type ClankGetter = dyn Fn(Clank, &World, Entity) -> Clank + Send + Sync;
 pub type ClankScriptGetter =
     dyn for<'lua> Fn(&World, Entity, LuaContext<'lua>) -> Option<LuaValue<'lua>> + Send + Sync;
 
-pub struct ClankEngine<'a, 'b> {
-    world: World,
-    dispatcher: DispatcherBuilder<'a, 'b>,
+pub struct ClankEngine {
+    components: Vec<
+        Box<
+            dyn FnOnce(
+                    &mut World,
+                    &mut HashMap<TypeId, Arc<ClankSetter>>,
+                    &mut HashMap<TypeId, Arc<ClankGetter>>,
+                    &mut HashMap<&'static str, Arc<ClankScriptGetter>>,
+                ) + Send,
+        >,
+    >,
+    systems: Vec<Box<dyn FnOnce(&mut DispatcherBuilder) + Send>>,
+    resources: Vec<Box<dyn FnOnce(&mut World) + Send>>,
     swapchain_flag: Arc<AtomicBool>,
-    events_loop: EventsLoop,
-    setters: HashMap<TypeId, Arc<ClankSetter>>,
-    getters: HashMap<TypeId, Arc<ClankGetter>>,
-    names: HashMap<&'static str, Arc<ClankScriptGetter>>,
+    events_loop: EventLoop<()>,
 }
 
-impl<'a, 'b> ClankEngine<'a, 'b> {
-    pub fn new(
-        world: World,
-        dispatcher: DispatcherBuilder<'a, 'b>,
-        swapchain_flag: Arc<AtomicBool>,
-        events_loop: EventsLoop,
-    ) -> ClankEngine<'a, 'b> {
+impl ClankEngine {
+    pub fn new(swapchain_flag: Arc<AtomicBool>, events_loop: EventLoop<()>) -> ClankEngine {
         ClankEngine {
-            world,
-            dispatcher,
+            components: Vec::new(),
+            systems: Vec::new(),
+            resources: Vec::new(),
             swapchain_flag,
             events_loop,
-            setters: HashMap::new(),
-            getters: HashMap::new(),
-            names: HashMap::new(),
         }
     }
 
-    pub fn run<F: for<'g> FnOnce(EngineHandle<'g>)>(mut self, init: F) {
+    pub fn run<F: for<'g> FnOnce(EngineHandle<'g>) + Send + 'static>(self, init: F) -> ! {
         setup_logger().expect("Failed to setup logging");
 
         let (event_chan, receive_chan) = channel();
 
-        let event_system = super::script::ScriptSystem::new(
+        let done_flag = Arc::new(AtomicBool::new(false));
+
+        let resources = self.resources;
+        let components = self.components;
+        let systems = self.systems;
+
+        let world_setup =
+            move |world: &mut World,
+                  setters: &mut HashMap<TypeId, Arc<ClankSetter>>,
+                  getters: &mut HashMap<TypeId, Arc<ClankGetter>>,
+                  names: &mut HashMap<&'static str, Arc<ClankScriptGetter>>| {
+                resources.into_iter().for_each(|f| f(world));
+                components
+                    .into_iter()
+                    .for_each(|f| f(world, setters, getters, names));
+            };
+
+        let dispatcher_setup = move |dispatcher: &mut DispatcherBuilder<'_, '_>| {
+            systems.into_iter().for_each(|f| f(dispatcher));
+        };
+
+        let mut ecs_thread = Some(run_ecs_thread(
+            done_flag.clone(),
             receive_chan,
-            self.setters.clone(),
-            self.getters.clone(),
-            self.names.clone(),
-        );
+            world_setup,
+            dispatcher_setup,
+            init,
+        ));
 
-        let mut dispatcher = self.dispatcher.with(event_system, "events", &[]).build();
+        let swapchain_flag = self.swapchain_flag;
 
-        dispatcher.setup(&mut self.world);
+        self.events_loop.run(move |ev, _, control_flow| {
+            match ev {
+                WEvent::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => done_flag.store(true, Ordering::Relaxed),
+                WEvent::WindowEvent {
+                    event: WindowEvent::Resized(_),
+                    ..
+                } => swapchain_flag.store(true, Ordering::Relaxed),
+                _ => (),
+            };
 
-        let mut done = false;
+            match Event::try_from(ev).and_then(|x| {
+                event_chan
+                    .send(x)
+                    .map_err(|y| format!("Failed to send chan, {}", y))
+            }) {
+                Ok(_e) => (),
+                Err(e) => error!("Failed to send event {}", e),
+            };
 
-        let swapchain_flag = self.swapchain_flag.clone();
-
-        let handle = EngineHandle::new(&mut self.world, self.setters.clone(), self.getters.clone());
-
-        init(handle);
-
-        loop {
-            let last_frame = Instant::now();
-
-            dispatcher.dispatch(&mut self.world);
-
-            self.world.maintain();
-
-            &mut self.events_loop.poll_events(|ev| {
-                match ev {
-                    WEvent::WindowEvent {
-                        event: WindowEvent::CloseRequested,
-                        ..
-                    } => done = true,
-                    WEvent::WindowEvent {
-                        event: WindowEvent::Resized(_),
-                        ..
-                    } => swapchain_flag.store(true, Ordering::Relaxed),
-                    _ => (),
-                };
-                match Event::try_from(ev).and_then(|x| {
-                    event_chan
-                        .send(x)
-                        .map_err(|y| format!("Failed to send chan, {}", y))
-                }) {
-                    Ok(_e) => (),
-                    Err(e) => error!("Failed to send event {}", e),
-                };
-            });
-            if done {
+            if done_flag.load(Ordering::Relaxed) {
+                if let Some(thread) = ecs_thread.take() {
+                    thread.join().expect("Failed to stop ecs thread");
+                }
+                *control_flow = winit::event_loop::ControlFlow::Exit;
                 return;
             }
-
-            if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
-                sleep(Duration::from_millis(
-                    (SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64,
-                ));
-            }
-        }
+            *control_flow = winit::event_loop::ControlFlow::Wait;
+        })
     }
 
     pub fn insert<T: Send + Sync + 'static>(&mut self, resource: T) {
-        self.world.insert(resource);
+        self.resources
+            .push(Box::new(|world: &mut World| world.insert(resource)));
     }
 
     pub fn register<T: Scriptable + Send + Sync + 'static>(&mut self) {
-        self.world.register::<GameObjectComponent<T>>();
-        self.setters.insert(
-            TypeId::of::<T>(),
-            Arc::new(|builder, component| {
-                let typed_component = match component.downcast::<Mutex<T>>() {
-                    Ok(a) => a,
-                    Err(e) => panic!("Failed downcast {:?}", e),
-                };
+        self.components
+            .push(Box::new(|world, setters, getters, names| {
+                world.register::<GameObjectComponent<T>>();
+                setters.insert(
+                    TypeId::of::<T>(),
+                    Arc::new(|builder, component| {
+                        let typed_component = match component.downcast::<Mutex<T>>() {
+                            Ok(a) => a,
+                            Err(e) => panic!("Failed downcast {:?}", e),
+                        };
 
-                match Arc::try_unwrap(typed_component) {
-                    Ok(obj) => builder.with(GameObjectComponent::new(obj)),
-                    Err(_e) => panic!("Failed to unwrap component"),
-                }
-            }),
-        );
+                        match Arc::try_unwrap(typed_component) {
+                            Ok(obj) => builder.with(GameObjectComponent::new(obj)),
+                            Err(_e) => panic!("Failed to unwrap component"),
+                        }
+                    }),
+                );
 
-        self.getters.insert(
-            TypeId::of::<T>(),
-            Arc::new(|mut clank, world, ent| {
-                let storage = world.read_storage::<GameObjectComponent<T>>();
-                let component = storage.get(ent);
-                if let Some(comp) = component.map(|x| x.component.clone() as Arc<Mutex<T>>) {
-                    clank.components.insert(TypeId::of::<T>(), comp);
-                }
-                clank
-            }),
-        );
+                getters.insert(
+                    TypeId::of::<T>(),
+                    Arc::new(|mut clank, world, ent| {
+                        let storage = world.read_storage::<GameObjectComponent<T>>();
+                        let component = storage.get(ent);
+                        if let Some(comp) = component.map(|x| x.component.clone() as Arc<Mutex<T>>)
+                        {
+                            clank.components.insert(TypeId::of::<T>(), comp);
+                        }
+                        clank
+                    }),
+                );
 
-        self.names.insert(
-            T::name(),
-            Arc::new(|world, entity, context| {
-                let storage = world.read_storage::<GameObjectComponent<T>>();
+                names.insert(
+                    T::name(),
+                    Arc::new(|world, entity, context| {
+                        let storage = world.read_storage::<GameObjectComponent<T>>();
 
-                storage
-                    .get(entity)
-                    .cloned()
-                    .and_then(|x| context.create_userdata(x).ok())
-                    .map(|x| LuaValue::UserData(x))
-            }),
-        );
+                        storage
+                            .get(entity)
+                            .cloned()
+                            .and_then(|x| context.create_userdata(x).ok())
+                            .map(|x| LuaValue::UserData(x))
+                    }),
+                );
+            }));
     }
 
     pub fn register_system<T: for<'d> System<'d> + Send + 'static>(
         mut self,
         system: T,
-        name: &str,
-        deps: &[&str],
+        name: &'static str,
+        deps: &'static [&'static str],
     ) -> Self {
-        self.dispatcher = self.dispatcher.with(system, name, deps);
+        self.systems.push(Box::new(move |dispatcher| {
+            dispatcher.add(system, name, deps);
+        }));
         self
     }
 }
@@ -483,4 +496,60 @@ impl<'a> EngineHandle<'a> {
     pub fn insert<T: Send + Sync + 'static>(&mut self, resource: T) {
         self.world.insert(resource);
     }
+}
+
+fn run_ecs_thread<
+    F1: FnOnce(
+            &mut World,
+            &mut HashMap<TypeId, Arc<ClankSetter>>,
+            &mut HashMap<TypeId, Arc<ClankGetter>>,
+            &mut HashMap<&'static str, Arc<ClankScriptGetter>>,
+        ) + Send
+        + 'static,
+    F2: FnOnce(&mut DispatcherBuilder<'_, '_>) + Send + 'static,
+    F3: FnOnce(EngineHandle<'_>) + Send + 'static,
+>(
+    done: Arc<AtomicBool>,
+    event_recieve: std::sync::mpsc::Receiver<Event>,
+    world_setup: F1,
+    dispatcher_setup: F2,
+    init: F3,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut setters = HashMap::new();
+        let mut getters = HashMap::new();
+        let mut names = HashMap::new();
+        let mut world = World::new();
+
+        world_setup(&mut world, &mut setters, &mut getters, &mut names);
+
+        let event_system = crate::script::ScriptSystem::new(
+            event_recieve,
+            setters.clone(),
+            getters.clone(),
+            names,
+        );
+
+        let mut dispatcher_builder = specs::DispatcherBuilder::new();
+        dispatcher_setup(&mut dispatcher_builder);
+        let mut dispatcher = dispatcher_builder
+            .with(event_system, "event_system", &[])
+            .build();
+        dispatcher.setup(&mut world);
+
+        let handle = EngineHandle::new(&mut world, setters, getters);
+
+        init(handle);
+
+        while !done.load(Ordering::Relaxed) {
+            let last_frame = Instant::now();
+            dispatcher.dispatch(&mut world);
+            world.maintain();
+            if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
+                sleep(Duration::from_millis(
+                    (SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64,
+                ));
+            }
+        }
+    })
 }

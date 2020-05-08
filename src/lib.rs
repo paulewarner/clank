@@ -24,9 +24,7 @@ use std::io::BufReader;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use winit::EventsLoop;
-
-use specs::prelude::*;
+use winit::event_loop::EventLoop;
 
 mod core;
 mod error;
@@ -37,17 +35,14 @@ pub mod state;
 
 pub use image::ImageFormat;
 
-pub fn assemble<'a, 'b>() -> Result<core::ClankEngine<'a, 'b>, Box<dyn std::error::Error>> {
-    let world = World::new();
-    let events_loop = EventsLoop::new();
+pub fn assemble() -> Result<core::ClankEngine, Box<dyn std::error::Error>> {
+    let events_loop = EventLoop::new();
 
     let swapchain_flag = Arc::new(AtomicBool::new(false));
 
     let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone())?;
 
-    let dispatcher = DispatcherBuilder::new();
-
-    let mut engine = core::ClankEngine::new(world, dispatcher, swapchain_flag, events_loop);
+    let mut engine = core::ClankEngine::new(swapchain_flag, events_loop);
 
     let config: graphics::sprite::SpriteConfig =
         serde_json::from_reader(BufReader::new(File::open("resources/SpriteConfig.json")?))?;

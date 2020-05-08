@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use rlua::prelude::*;
 
-use winit::{Event as WEvent, VirtualKeyCode, WindowEvent};
+use winit::event::{Event as WEvent, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
@@ -166,10 +166,10 @@ fn map_keycode(code: VirtualKeyCode) -> Result<&'static str, &'static str> {
     }
 }
 
-impl std::convert::TryFrom<WEvent> for Event {
+impl<'a, T> std::convert::TryFrom<WEvent<'a, T>> for Event {
     type Error = String;
 
-    fn try_from(ev: WEvent) -> Result<Event, String> {
+    fn try_from(ev: WEvent<'a, T>) -> Result<Event, String> {
         match ev {
             WEvent::WindowEvent {
                 window_id: _,
@@ -177,14 +177,15 @@ impl std::convert::TryFrom<WEvent> for Event {
                     WindowEvent::KeyboardInput {
                         device_id: _,
                         input,
+                        is_synthetic: _,
                     },
             } => {
                 let keycode = input.virtual_keycode.ok_or("No keycode present")?;
                 match input.state {
-                    winit::ElementState::Pressed => {
+                    winit::event::ElementState::Pressed => {
                         Ok(Event::ButtonPressed(map_keycode(keycode)?.to_owned()))
                     }
-                    winit::ElementState::Released => {
+                    winit::event::ElementState::Released => {
                         Ok(Event::ButtonReleased(map_keycode(keycode)?.to_owned()))
                     }
                 }
