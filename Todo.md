@@ -2,6 +2,7 @@
 * Separate out 2D rendering pipeline into it's own module
 * Replace the recreate_swapchain flag with an event triggered by the window and sent to the renderer
 * Create a 3D rendering module
+* Wrap windowing module
 
 # Scripting API
 * Fill out lua APIs for existing systems

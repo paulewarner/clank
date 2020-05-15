@@ -1,15 +1,8 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-
-use super::script::Event;
-use winit::event::{Event as WEvent, WindowEvent};
-use winit::event_loop::EventLoop;
 
 use rlua::prelude::*;
 use specs::prelude::*;
@@ -302,27 +295,21 @@ pub struct ClankEngine {
     >,
     systems: Vec<Box<dyn FnOnce(&mut DispatcherBuilder) + Send>>,
     resources: Vec<Box<dyn FnOnce(&mut World) + Send>>,
-    swapchain_flag: Arc<AtomicBool>,
-    events_loop: EventLoop<()>,
+    window_system: crate::windowing::WindowSystem,
 }
 
 impl ClankEngine {
-    pub fn new(swapchain_flag: Arc<AtomicBool>, events_loop: EventLoop<()>) -> ClankEngine {
+    pub fn new(window_system: crate::windowing::WindowSystem) -> ClankEngine {
         ClankEngine {
             components: Vec::new(),
             systems: Vec::new(),
             resources: Vec::new(),
-            swapchain_flag,
-            events_loop,
+            window_system
         }
     }
 
-    pub fn run<F: for<'g> FnOnce(EngineHandle<'g>) + Send + 'static>(self, init: F) -> ! {
+    pub fn run<F: for<'g> FnOnce(EngineHandle<'g>) + Send + 'static>(mut self, init: F) -> ! {
         setup_logger().expect("Failed to setup logging");
-
-        let (event_chan, receive_chan) = channel();
-
-        let done_flag = Arc::new(AtomicBool::new(false));
 
         let resources = self.resources;
         let components = self.components;
@@ -343,47 +330,15 @@ impl ClankEngine {
             systems.into_iter().for_each(|f| f(dispatcher));
         };
 
-        let mut ecs_thread = Some(run_ecs_thread(
-            done_flag.clone(),
-            receive_chan,
+        let ecs_thread = run_ecs_thread(
+            self.window_system.program_event_reciever().expect("Failed to get event reciever"),
+            self.window_system.input_event_reciever().expect("Failed to get event reciever"),
             world_setup,
             dispatcher_setup,
             init,
-        ));
+        );
 
-        let swapchain_flag = self.swapchain_flag;
-
-        self.events_loop.run(move |ev, _, control_flow| {
-            match ev {
-                WEvent::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    ..
-                } => done_flag.store(true, Ordering::Relaxed),
-                WEvent::WindowEvent {
-                    event: WindowEvent::Resized(_),
-                    ..
-                } => swapchain_flag.store(true, Ordering::Relaxed),
-                _ => (),
-            };
-
-            match Event::try_from(ev).and_then(|x| {
-                event_chan
-                    .send(x)
-                    .map_err(|y| format!("Failed to send chan, {}", y))
-            }) {
-                Ok(_e) => (),
-                Err(e) => error!("Failed to send event {}", e),
-            };
-
-            if done_flag.load(Ordering::Relaxed) {
-                if let Some(thread) = ecs_thread.take() {
-                    thread.join().expect("Failed to stop ecs thread");
-                }
-                *control_flow = winit::event_loop::ControlFlow::Exit;
-                return;
-            }
-            *control_flow = winit::event_loop::ControlFlow::Wait;
-        })
+        self.window_system.run_event_loop(ecs_thread)
     }
 
     pub fn insert<T: Send + Sync + 'static>(&mut self, resource: T) {
@@ -509,8 +464,8 @@ fn run_ecs_thread<
     F2: FnOnce(&mut DispatcherBuilder<'_, '_>) + Send + 'static,
     F3: FnOnce(EngineHandle<'_>) + Send + 'static,
 >(
-    done: Arc<AtomicBool>,
-    event_recieve: std::sync::mpsc::Receiver<Event>,
+    program_event_reciever: std::sync::mpsc::Receiver<crate::windowing::ProgramEvent>,
+    input_event_reciever: std::sync::mpsc::Receiver<crate::windowing::InputEvent>,
     world_setup: F1,
     dispatcher_setup: F2,
     init: F3,
@@ -524,7 +479,7 @@ fn run_ecs_thread<
         world_setup(&mut world, &mut setters, &mut getters, &mut names);
 
         let event_system = crate::script::ScriptSystem::new(
-            event_recieve,
+            input_event_reciever,
             setters.clone(),
             getters.clone(),
             names,
@@ -541,10 +496,20 @@ fn run_ecs_thread<
 
         init(handle);
 
-        while !done.load(Ordering::Relaxed) {
+        let mut done = false;
+
+        while !done {
             let last_frame = Instant::now();
             dispatcher.dispatch(&mut world);
             world.maintain();
+
+            while let Ok(ev) = program_event_reciever.try_recv() {
+                match ev {
+                    crate::windowing::ProgramEvent::CloseRequested => {
+                        done = true;
+                    }
+                }
+            }
             if last_frame.elapsed().as_millis() < SCREEN_TICKS_PER_FRAME {
                 sleep(Duration::from_millis(
                     (SCREEN_TICKS_PER_FRAME - last_frame.elapsed().as_millis()) as u64,

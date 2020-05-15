@@ -1,6 +1,5 @@
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
@@ -10,8 +9,6 @@ use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 
 use rlua::prelude::*;
-
-use winit::event::{Event as WEvent, VirtualKeyCode, WindowEvent};
 
 use specs::prelude::*;
 
@@ -75,6 +72,15 @@ pub enum EventType {
     ButtonReleased,
 }
 
+impl std::convert::From<crate::windowing::InputEvent> for EventType {
+    fn from(ev: crate::windowing::InputEvent) -> EventType {
+        match ev {
+            crate::windowing::InputEvent::ButtonPressed(_) => EventType::ButtonPressed,
+            crate::windowing::InputEvent::ButtonReleased(_) => EventType::ButtonReleased,
+        }
+    }
+}
+
 type UpdateScript =
     dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState) + Send + Sync;
 
@@ -111,118 +117,8 @@ fn wrap_update_script(script: Vec<u8>) -> Arc<UpdateScript> {
     })
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
-pub enum Event {
-    ButtonPressed(String),
-    ButtonReleased(String),
-}
-
-fn map_keycode(code: VirtualKeyCode) -> Result<&'static str, &'static str> {
-    match code {
-        VirtualKeyCode::A => Ok("a"),
-        VirtualKeyCode::B => Ok("b"),
-        VirtualKeyCode::C => Ok("c"),
-        VirtualKeyCode::D => Ok("d"),
-        VirtualKeyCode::E => Ok("e"),
-        VirtualKeyCode::F => Ok("f"),
-        VirtualKeyCode::G => Ok("g"),
-        VirtualKeyCode::H => Ok("h"),
-        VirtualKeyCode::J => Ok("j"),
-        VirtualKeyCode::I => Ok("i"),
-        VirtualKeyCode::K => Ok("k"),
-        VirtualKeyCode::L => Ok("l"),
-        VirtualKeyCode::M => Ok("m"),
-        VirtualKeyCode::N => Ok("n"),
-        VirtualKeyCode::O => Ok("o"),
-        VirtualKeyCode::P => Ok("p"),
-        VirtualKeyCode::Q => Ok("q"),
-        VirtualKeyCode::R => Ok("r"),
-        VirtualKeyCode::S => Ok("s"),
-        VirtualKeyCode::T => Ok("t"),
-        VirtualKeyCode::U => Ok("u"),
-        VirtualKeyCode::V => Ok("v"),
-        VirtualKeyCode::W => Ok("w"),
-        VirtualKeyCode::X => Ok("x"),
-        VirtualKeyCode::Y => Ok("y"),
-        VirtualKeyCode::Z => Ok("z"),
-        VirtualKeyCode::Down => Ok("down"),
-        VirtualKeyCode::Up => Ok("up"),
-        VirtualKeyCode::Left => Ok("left"),
-        VirtualKeyCode::Right => Ok("right"),
-        VirtualKeyCode::Key0 => Ok("0"),
-        VirtualKeyCode::Key1 => Ok("1"),
-        VirtualKeyCode::Key2 => Ok("2"),
-        VirtualKeyCode::Key3 => Ok("3"),
-        VirtualKeyCode::Key4 => Ok("4"),
-        VirtualKeyCode::Key5 => Ok("5"),
-        VirtualKeyCode::Key6 => Ok("6"),
-        VirtualKeyCode::Key7 => Ok("7"),
-        VirtualKeyCode::Key8 => Ok("8"),
-        VirtualKeyCode::Key9 => Ok("9"),
-        VirtualKeyCode::Space => Ok("space"),
-        VirtualKeyCode::Tab => Ok("tab"),
-        VirtualKeyCode::Capital => Ok("shift"),
-        _ => Err("Cannot convert!"),
-    }
-}
-
-impl<'a, T> std::convert::TryFrom<WEvent<'a, T>> for Event {
-    type Error = String;
-
-    fn try_from(ev: WEvent<'a, T>) -> Result<Event, String> {
-        match ev {
-            WEvent::WindowEvent {
-                window_id: _,
-                event:
-                    WindowEvent::KeyboardInput {
-                        device_id: _,
-                        input,
-                        is_synthetic: _,
-                    },
-            } => {
-                let keycode = input.virtual_keycode.ok_or("No keycode present")?;
-                match input.state {
-                    winit::event::ElementState::Pressed => {
-                        Ok(Event::ButtonPressed(map_keycode(keycode)?.to_owned()))
-                    }
-                    winit::event::ElementState::Released => {
-                        Ok(Event::ButtonReleased(map_keycode(keycode)?.to_owned()))
-                    }
-                }
-            }
-            _ => Err("unsupported event type".to_owned()),
-        }
-    }
-}
-
-impl std::convert::From<Event> for EventType {
-    fn from(ev: Event) -> EventType {
-        match ev {
-            Event::ButtonPressed(_) => EventType::ButtonPressed,
-            Event::ButtonReleased(_) => EventType::ButtonReleased,
-        }
-    }
-}
-
-impl<'lua> ToLua<'lua> for Event {
-    fn to_lua(self, context: LuaContext<'lua>) -> Result<LuaValue<'lua>, LuaError> {
-        let ev = context.create_table()?;
-        match self {
-            Event::ButtonPressed(s) => {
-                ev.set("type", "ButtonPressed")?;
-                ev.set("button", s)?;
-            }
-            Event::ButtonReleased(s) => {
-                ev.set("type", "ButtonReleased")?;
-                ev.set("button", s)?;
-            }
-        }
-        Ok(LuaValue::Table(ev))
-    }
-}
-
 type HandlerScript =
-    dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState, Event) + Send + Sync;
+    dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState, crate::windowing::InputEvent) + Send + Sync;
 
 fn wrap_handler_script(script: Vec<u8>) -> Arc<HandlerScript> {
     let wrapped_script = Arc::new(script);
@@ -331,7 +227,7 @@ impl ScriptBuilder {
         Ok(self)
     }
 
-    pub fn with_handler<F: Fn(EngineHandle, Clank, ScriptState, Event) + Send + Sync + 'static>(
+    pub fn with_handler<F: Fn(EngineHandle, Clank, ScriptState, crate::windowing::InputEvent) + Send + Sync + 'static>(
         mut self,
         input: EventType,
         f: F,
@@ -377,7 +273,7 @@ impl Scriptable for Script {
 }
 
 pub struct ScriptSystem {
-    chan: Receiver<Event>,
+    chan: Receiver<crate::windowing::InputEvent>,
     setters: HashMap<TypeId, Arc<ClankSetter>>,
     getters: HashMap<TypeId, Arc<ClankGetter>>,
     names: HashMap<&'static str, Arc<ClankScriptGetter>>,
@@ -399,7 +295,7 @@ impl<'a> System<'a> for ScriptSystem {
 
 impl ScriptSystem {
     pub fn new(
-        chan: Receiver<Event>,
+        chan: Receiver<crate::windowing::InputEvent>,
         setters: HashMap<TypeId, Arc<ClankSetter>>,
         getters: HashMap<TypeId, Arc<ClankGetter>>,
         names: HashMap<&'static str, Arc<ClankScriptGetter>>,
@@ -424,24 +320,17 @@ impl ScriptSystem {
     }
 
     fn run_handlers(&mut self, (entities, scripts, lazy): &<ScriptSystem as System>::SystemData) {
-        while let Ok(winit_event) = self.chan.try_recv() {
-            match Event::try_from(winit_event) {
-                Ok(event) => {
-                    for (entity, script_obj) in (entities, scripts).join() {
-                        let script = script_obj.get();
-                        script
-                            .handlers
-                            .get(&EventType::from(event.clone()))
-                            .cloned()
-                            .map(|s| {
-                                let state = script.state.clone();
-                                s(self, lazy, entity, state, event.clone());
-                            });
-                    }
-                }
-                Err(e) => {
-                    debug!("Failed to convert window event for handling processing with the following error: {:?}", e);
-                }
+        while let Ok(event) = self.chan.try_recv() {
+            for (entity, script_obj) in (entities, scripts).join() {
+                let script = script_obj.get();
+                script
+                    .handlers
+                    .get(&EventType::from(event.clone()))
+                    .cloned()
+                    .map(|s| {
+                        let state = script.state.clone();
+                        s(self, lazy, entity, state, event.clone());
+                    });
             }
         }
     }

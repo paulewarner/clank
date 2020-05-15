@@ -1,5 +1,4 @@
 use std::convert::TryInto;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
@@ -26,10 +25,7 @@ use vulkano::swapchain::{AcquireError, PresentMode, Surface, SurfaceTransform, S
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
 
-use vulkano_win::VkSurfaceBuild;
-
-use winit::event_loop::EventLoop;
-use winit::window::{Window, WindowBuilder};
+use winit::window::Window;
 
 use crate::core::{GameObjectComponent, MethodAdder, Scriptable};
 use crate::error::NoneError;
@@ -493,7 +489,8 @@ impl Component for Graphics {
 }
 
 pub struct GraphicsSystem {
-    recreate_swapchain: Arc<AtomicBool>,
+    window_event_sender: std::sync::mpsc::Sender<crate::windowing::WindowEvent>,
+    window_event_reciever: std::sync::mpsc::Receiver<crate::windowing::WindowEvent>,
     previous_frame_end: Box<dyn GpuFuture + Send + Sync>,
     surface: Arc<Surface<Window>>,
     swapchain: Arc<Swapchain<Window>>,
@@ -526,8 +523,7 @@ impl std::error::Error for NoWindowError {}
 
 impl GraphicsSystem {
     pub fn new(
-        events_loop: &EventLoop<()>,
-        swaphchain_flag: Arc<AtomicBool>,
+        windowing: &mut crate::windowing::WindowSystem,
     ) -> Result<GraphicsSystem, Box<dyn std::error::Error>> {
         let extensions = vulkano_win::required_extensions();
         let instance = Instance::new(None, &extensions, None)?;
@@ -541,7 +537,7 @@ impl GraphicsSystem {
             physical.ty()
         );
 
-        let surface = WindowBuilder::new().build_vk_surface(events_loop, instance.clone())?;
+        let surface = windowing.surface(instance.clone())?;
         let window = surface.window();
 
         let queue_family = physical
@@ -659,7 +655,8 @@ impl GraphicsSystem {
         let descriptor_pool = Arc::new(Mutex::new(FixedSizeDescriptorSetsPool::new(layout)));
 
         Ok(GraphicsSystem {
-            recreate_swapchain: swaphchain_flag,
+            window_event_sender: windowing.window_event_sender(),
+            window_event_reciever: windowing.window_event_reciever().ok_or(NoneError)?,
             device: device.clone(),
             previous_frame_end: Box::new(sync::now(device.clone())),
             surface: surface,
@@ -738,37 +735,39 @@ impl GraphicsSystem {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let window = self.surface.window();
         self.previous_frame_end.cleanup_finished();
-        if self.recreate_swapchain.load(Ordering::Relaxed) {
-            let size = window.inner_size();
-            let dimensions = (size.width, size.height);
-            *VIEWPORT_SIZE.lock()? = dimensions;
-
-            let (new_swapchain, new_images) = self
-                .swapchain
-                .recreate_with_dimensions([size.width, size.height])?;
-
-            self.swapchain = new_swapchain;
-            self.framebuffers = window_size_dependent_setup(
-                &new_images,
-                self.render_pass.clone(),
-                &mut self.dynamic_state,
-            )?;
-
-            self.recreate_swapchain.store(false, Ordering::Relaxed);
+        while let Ok(ev) = self.window_event_reciever.try_recv() {
+            match ev {
+                crate::windowing::WindowEvent::Resized => {
+                    let size = window.inner_size();
+                    let dimensions = (size.width, size.height);
+                    *VIEWPORT_SIZE.lock()? = dimensions;
+        
+                    let (new_swapchain, new_images) = self
+                        .swapchain
+                        .recreate_with_dimensions([size.width, size.height])?;
+        
+                    self.swapchain = new_swapchain;
+                    self.framebuffers = window_size_dependent_setup(
+                        &new_images,
+                        self.render_pass.clone(),
+                        &mut self.dynamic_state,
+                    )?;
+                }
+            }
         }
 
         let (image_num, recreate_swapchain_needed, future) =
             match swapchain::acquire_next_image(self.swapchain.clone(), None) {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
-                    self.recreate_swapchain.store(true, Ordering::Relaxed);
+                    self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
                     return Ok(());
                 }
                 Err(err) => return Err(Box::new(err)),
             };
 
         if recreate_swapchain_needed {
-            self.recreate_swapchain.store(true, Ordering::Relaxed);
+            self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
         }
 
         let (cb, previous_frame_end) = self.build_render_pass(positions, graphics, image_num)?;
@@ -789,7 +788,7 @@ impl GraphicsSystem {
                 self.previous_frame_end = Box::new(future) as Box<_>;
             }
             Err(FlushError::OutOfDate) => {
-                self.recreate_swapchain.store(true, Ordering::Relaxed);
+                self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
                 self.previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
             }
             Err(e) => {

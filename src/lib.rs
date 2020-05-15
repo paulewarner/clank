@@ -21,13 +21,10 @@ extern crate winit;
 
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-
-use winit::event_loop::EventLoop;
 
 mod core;
 mod error;
+mod windowing;
 pub mod graphics;
 pub mod position;
 pub mod script;
@@ -36,13 +33,11 @@ pub mod state;
 pub use image::ImageFormat;
 
 pub fn assemble() -> Result<core::ClankEngine, Box<dyn std::error::Error>> {
-    let events_loop = EventLoop::new();
+    let mut windowing = windowing::WindowSystem::new();
 
-    let swapchain_flag = Arc::new(AtomicBool::new(false));
+    let graphics_system = graphics::GraphicsSystem::new(&mut windowing)?;
 
-    let graphics_system = graphics::GraphicsSystem::new(&events_loop, swapchain_flag.clone())?;
-
-    let mut engine = core::ClankEngine::new(swapchain_flag, events_loop);
+    let mut engine = core::ClankEngine::new(windowing);
 
     let config: graphics::sprite::SpriteConfig =
         serde_json::from_reader(BufReader::new(File::open("resources/SpriteConfig.json")?))?;
