@@ -188,7 +188,7 @@ impl WindowSystem {
 
     pub fn run_event_loop(self, ecs_thread: std::thread::JoinHandle<()>) -> ! {
         let mut thread = Some(ecs_thread);
-        let should_close = false;
+        let mut should_close = false;
         let program_send = self.program_send;
         let input_send = self.input_send;
         let window_send = self.window_send;
@@ -196,15 +196,18 @@ impl WindowSystem {
         self.event_loop.run(move |ev, _, control_flow| {
             if let Ok(event) = WinitEvent::try_from(ev) {
                 match send_event(event, &program_send, &input_send, &window_send) {
-                    Ok(()) => (),
+                    Ok(Some(ev)) => should_close = true,
+                    Ok(None) => (),
                     Err(e) => error!("Failed to send event: {}", e)
                 }
             }
 
             if should_close {
+                trace!("Stopping ecs thread");
                 if let Some(thread) = thread.take() {
                     thread.join().expect("Failed to stop ecs thread");
                 }
+                trace!("ecs thread ended successfully");
                 *control_flow = winit::event_loop::ControlFlow::Exit;
                 return;
             }
@@ -217,11 +220,11 @@ impl WindowSystem {
     }
 }
 
-fn send_event(event: WinitEvent, program_send: &Sender<crate::windowing::ProgramEvent>, input_send: &Sender<crate::windowing::InputEvent>, window_send: &Sender<crate::windowing::WindowEvent>) -> Result<(), String> {
+fn send_event(event: WinitEvent, program_send: &Sender<crate::windowing::ProgramEvent>, input_send: &Sender<crate::windowing::InputEvent>, window_send: &Sender<crate::windowing::WindowEvent>) -> Result<Option<ProgramEvent>, String> {
     match event {
-        WinitEvent::ProgramEvent(program_event) => program_send.send(program_event).map_err(|y| format!("Failed to send chan, {}", y)),
-        WinitEvent::InputEvent(input_event) => input_send.send(input_event).map_err(|y| format!("Failed to send chan, {}", y)),
-        WinitEvent::WindowEvent(window_event) => window_send.send(window_event).map_err(|y| format!("Failed to send chan, {}", y)),
+        WinitEvent::ProgramEvent(program_event) => program_send.send(program_event.clone()).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| Some(program_event)),
+        WinitEvent::InputEvent(input_event) => input_send.send(input_event).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| None),
+        WinitEvent::WindowEvent(window_event) => window_send.send(window_event).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| None),
     }
 }
 
