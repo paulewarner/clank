@@ -24,11 +24,12 @@ use std::io::BufReader;
 
 mod core;
 mod error;
-mod windowing;
+pub mod event;
 pub mod graphics;
 pub mod position;
 pub mod script;
 pub mod state;
+mod windowing;
 
 pub use image::ImageFormat;
 
@@ -39,8 +40,11 @@ pub fn assemble() -> Result<core::ClankEngine, Box<dyn std::error::Error>> {
 
     let mut engine = core::ClankEngine::new(windowing);
 
-    let config: graphics::sprite::SpriteConfig =
+    let sprite_config: graphics::sprite::SpriteConfig =
         serde_json::from_reader(BufReader::new(File::open("resources/SpriteConfig.json")?))?;
+
+    let window_config: graphics::window::WindowBuilderSystemConfig =
+        serde_json::from_reader(BufReader::new(File::open("resources/WindowConfig.json")?))?;
 
     engine.register::<graphics::Graphics>();
     engine.register::<script::Script>();
@@ -48,7 +52,8 @@ pub fn assemble() -> Result<core::ClankEngine, Box<dyn std::error::Error>> {
     engine.register::<position::Position>();
     engine.register::<graphics::sprite::Sprite>();
 
-    engine.insert(config);
+    engine.insert(sprite_config);
+    engine.insert(graphics::window::WindowBuilderSystem::new(window_config)?);
 
     Ok(engine
         .register_system(graphics::sprite::SpriteSystem, "sprite", &[])

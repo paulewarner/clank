@@ -3,8 +3,6 @@ use std::sync::{Arc, Mutex};
 
 use specs::prelude::*;
 
-use rusttype::Font;
-
 use nalgebra as na;
 
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
@@ -36,6 +34,7 @@ mod draw2d;
 mod imagewrapper;
 pub mod sprite;
 pub mod tilemap;
+pub mod window;
 
 lazy_static! {
     static ref VIEWPORT_SIZE: Mutex<(u32, u32)> = Mutex::new((0, 0));
@@ -122,18 +121,6 @@ pub struct GraphicsBuilder {
 enum ImageDesc {
     Image(imagewrapper::Image),
     ImagePath(std::path::PathBuf, image::ImageFormat),
-    TextWithFont {
-        text: String,
-        font: Font<'static>,
-        color: (u8, u8, u8),
-        size: f32,
-    },
-    TextWithFontPath {
-        text: String,
-        font_path: std::path::PathBuf,
-        color: (u8, u8, u8),
-        size: f32,
-    },
 }
 
 impl GraphicsBuilder {
@@ -191,38 +178,6 @@ impl GraphicsBuilder {
         self
     }
 
-    pub fn text_with_font<S: AsRef<str>, P: AsRef<std::path::Path>>(
-        mut self,
-        text: S,
-        font_path: P,
-        color: (u8, u8, u8),
-        size: f32,
-    ) -> Self {
-        self.image = Some(ImageDesc::TextWithFontPath {
-            text: String::from(text.as_ref()),
-            font_path: font_path.as_ref().to_path_buf(),
-            color,
-            size,
-        });
-        self
-    }
-
-    pub fn text<S: AsRef<str>>(
-        mut self,
-        text: S,
-        font: Font<'static>,
-        color: (u8, u8, u8),
-        size: f32,
-    ) -> Self {
-        self.image = Some(ImageDesc::TextWithFont {
-            text: String::from(text.as_ref()),
-            font,
-            color,
-            size,
-        });
-        self
-    }
-
     pub fn build(self) -> Result<Graphics, Box<dyn std::error::Error>> {
         let image = self
             .image
@@ -231,20 +186,6 @@ impl GraphicsBuilder {
                 ImageDesc::ImagePath(path, format) => {
                     imagewrapper::Image::load_with_ext(path, format)
                 }
-                ImageDesc::TextWithFont {
-                    text,
-                    font,
-                    color,
-                    size,
-                } => Ok(imagewrapper::Image::text(text, font, color, size)?),
-                ImageDesc::TextWithFontPath {
-                    text,
-                    font_path,
-                    color,
-                    size,
-                } => Ok(imagewrapper::Image::load_text(
-                    text, font_path, color, size,
-                )?),
             })
             .transpose()?;
 
@@ -741,11 +682,11 @@ impl GraphicsSystem {
                     let size = window.inner_size();
                     let dimensions = (size.width, size.height);
                     *VIEWPORT_SIZE.lock()? = dimensions;
-        
+
                     let (new_swapchain, new_images) = self
                         .swapchain
                         .recreate_with_dimensions([size.width, size.height])?;
-        
+
                     self.swapchain = new_swapchain;
                     self.framebuffers = window_size_dependent_setup(
                         &new_images,
@@ -760,14 +701,16 @@ impl GraphicsSystem {
             match swapchain::acquire_next_image(self.swapchain.clone(), None) {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
-                    self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
+                    self.window_event_sender
+                        .send(crate::windowing::WindowEvent::Resized)?;
                     return Ok(());
                 }
                 Err(err) => return Err(Box::new(err)),
             };
 
         if recreate_swapchain_needed {
-            self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
+            self.window_event_sender
+                .send(crate::windowing::WindowEvent::Resized)?;
         }
 
         let (cb, previous_frame_end) = self.build_render_pass(positions, graphics, image_num)?;
@@ -788,7 +731,8 @@ impl GraphicsSystem {
                 self.previous_frame_end = Box::new(future) as Box<_>;
             }
             Err(FlushError::OutOfDate) => {
-                self.window_event_sender.send(crate::windowing::WindowEvent::Resized)?;
+                self.window_event_sender
+                    .send(crate::windowing::WindowEvent::Resized)?;
                 self.previous_frame_end = Box::new(sync::now(self.device.clone())) as Box<_>;
             }
             Err(e) => {

@@ -117,8 +117,9 @@ fn wrap_update_script(script: Vec<u8>) -> Arc<UpdateScript> {
     })
 }
 
-type HandlerScript =
-    dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState, crate::windowing::InputEvent) + Send + Sync;
+type HandlerScript = dyn for<'a> Fn(&'a mut ScriptSystem, &LazyUpdate, Entity, ScriptState, crate::windowing::InputEvent)
+    + Send
+    + Sync;
 
 fn wrap_handler_script(script: Vec<u8>) -> Arc<HandlerScript> {
     let wrapped_script = Arc::new(script);
@@ -227,7 +228,9 @@ impl ScriptBuilder {
         Ok(self)
     }
 
-    pub fn with_handler<F: Fn(EngineHandle, Clank, ScriptState, crate::windowing::InputEvent) + Send + Sync + 'static>(
+    pub fn with_handler<
+        F: Fn(EngineHandle, Clank, ScriptState, crate::windowing::InputEvent) + Send + Sync + 'static,
+    >(
         mut self,
         input: EventType,
         f: F,

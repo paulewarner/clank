@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 
 use image::GenericImageView;
 
@@ -44,16 +44,6 @@ impl Image {
     ) -> Result<Image, Box<dyn std::error::Error>> {
         let raw = image::load(BufReader::new(File::open(path)?), format)?;
         Ok(Image { raw })
-    }
-
-    pub fn load_text<P: AsRef<std::path::Path>>(
-        text: String,
-        path: P,
-        color: (u8, u8, u8),
-        size: f32,
-    ) -> Result<Image, Box<dyn std::error::Error>> {
-        let font = load_font(path)?;
-        Image::text(text, font, color, size)
     }
 
     pub fn text(
@@ -161,18 +151,4 @@ impl Image {
             .map(|i| self.get_image_by_index((width, height), i))
             .collect()
     }
-}
-
-fn load_font<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<Font<'static>, Box<dyn std::error::Error>> {
-    let mut font_data = Vec::new();
-    load_file(path)?.read_to_end(&mut font_data)?;
-    Ok(Font::from_bytes(font_data)?)
-}
-
-fn load_file<P: AsRef<std::path::Path>>(
-    path: P,
-) -> Result<BufReader<File>, Box<dyn std::error::Error>> {
-    Ok(BufReader::new(File::open(path)?))
 }

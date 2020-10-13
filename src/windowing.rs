@@ -1,12 +1,12 @@
-use std::convert::TryFrom;
-use std::sync::Arc;
-use std::sync::mpsc::{Sender, Receiver, channel};
 use rlua::prelude::*;
+use std::convert::TryFrom;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
 use vulkano_win::VkSurfaceBuild;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum WindowEvent {
-    Resized
+    Resized,
 }
 
 impl<'a, T> TryFrom<&winit::event::Event<'a, T>> for WindowEvent {
@@ -25,7 +25,7 @@ impl<'a, T> TryFrom<&winit::event::Event<'a, T>> for WindowEvent {
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum ProgramEvent {
-    CloseRequested
+    CloseRequested,
 }
 
 impl<'a, T> TryFrom<&winit::event::Event<'a, T>> for ProgramEvent {
@@ -150,7 +150,7 @@ pub struct WindowSystem {
     input_send: Sender<InputEvent>,
     input_recieve: Option<Receiver<InputEvent>>,
     program_send: Sender<ProgramEvent>,
-    program_recieve: Option<Receiver<ProgramEvent>>
+    program_recieve: Option<Receiver<ProgramEvent>>,
 }
 
 impl WindowSystem {
@@ -166,7 +166,7 @@ impl WindowSystem {
             input_send,
             input_recieve: Some(input_recieve),
             program_send,
-            program_recieve: Some(program_recieve)
+            program_recieve: Some(program_recieve),
         }
     }
 
@@ -198,16 +198,14 @@ impl WindowSystem {
                 match send_event(event, &program_send, &input_send, &window_send) {
                     Ok(Some(ev)) => should_close = true,
                     Ok(None) => (),
-                    Err(e) => error!("Failed to send event: {}", e)
+                    Err(e) => error!("Failed to send event: {}", e),
                 }
             }
 
             if should_close {
-                trace!("Stopping ecs thread");
                 if let Some(thread) = thread.take() {
                     thread.join().expect("Failed to stop ecs thread");
                 }
-                trace!("ecs thread ended successfully");
                 *control_flow = winit::event_loop::ControlFlow::Exit;
                 return;
             }
@@ -215,23 +213,41 @@ impl WindowSystem {
         })
     }
 
-    pub fn surface(&self, instance: std::sync::Arc<vulkano::instance::Instance>) -> Result<Arc<vulkano::swapchain::Surface<winit::window::Window>>, vulkano_win::CreationError> {
+    pub fn surface(
+        &self,
+        instance: std::sync::Arc<vulkano::instance::Instance>,
+    ) -> Result<Arc<vulkano::swapchain::Surface<winit::window::Window>>, vulkano_win::CreationError>
+    {
         winit::window::WindowBuilder::new().build_vk_surface(&self.event_loop, instance)
     }
 }
 
-fn send_event(event: WinitEvent, program_send: &Sender<crate::windowing::ProgramEvent>, input_send: &Sender<crate::windowing::InputEvent>, window_send: &Sender<crate::windowing::WindowEvent>) -> Result<Option<ProgramEvent>, String> {
+fn send_event(
+    event: WinitEvent,
+    program_send: &Sender<crate::windowing::ProgramEvent>,
+    input_send: &Sender<crate::windowing::InputEvent>,
+    window_send: &Sender<crate::windowing::WindowEvent>,
+) -> Result<Option<ProgramEvent>, String> {
     match event {
-        WinitEvent::ProgramEvent(program_event) => program_send.send(program_event.clone()).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| Some(program_event)),
-        WinitEvent::InputEvent(input_event) => input_send.send(input_event).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| None),
-        WinitEvent::WindowEvent(window_event) => window_send.send(window_event).map_err(|y| format!("Failed to send chan, {}", y)).map(|x| None),
+        WinitEvent::ProgramEvent(program_event) => program_send
+            .send(program_event.clone())
+            .map_err(|y| format!("Failed to send chan, {}", y))
+            .map(|x| Some(program_event)),
+        WinitEvent::InputEvent(input_event) => input_send
+            .send(input_event)
+            .map_err(|y| format!("Failed to send chan, {}", y))
+            .map(|x| None),
+        WinitEvent::WindowEvent(window_event) => window_send
+            .send(window_event)
+            .map_err(|y| format!("Failed to send chan, {}", y))
+            .map(|x| None),
     }
 }
 
 enum WinitEvent {
     ProgramEvent(ProgramEvent),
     WindowEvent(WindowEvent),
-    InputEvent(InputEvent)
+    InputEvent(InputEvent),
 }
 
 impl<'a, T> TryFrom<winit::event::Event<'a, T>> for WinitEvent {

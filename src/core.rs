@@ -304,7 +304,7 @@ impl ClankEngine {
             components: Vec::new(),
             systems: Vec::new(),
             resources: Vec::new(),
-            window_system
+            window_system,
         }
     }
 
@@ -331,8 +331,12 @@ impl ClankEngine {
         };
 
         let ecs_thread = run_ecs_thread(
-            self.window_system.program_event_reciever().expect("Failed to get event reciever"),
-            self.window_system.input_event_reciever().expect("Failed to get event reciever"),
+            self.window_system
+                .program_event_reciever()
+                .expect("Failed to get event reciever"),
+            self.window_system
+                .input_event_reciever()
+                .expect("Failed to get event reciever"),
             world_setup,
             dispatcher_setup,
             init,
