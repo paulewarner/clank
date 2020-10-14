@@ -89,42 +89,26 @@ fn layout_text(
 ) -> Result<image::DynamicImage, Box<dyn Error>> {
     let scale = rusttype::Scale::uniform(size);
     let v_metrics = font.v_metrics(scale);
-    let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
 
-    let glyphs: Vec<_> = text
-        .split('\n')
-        .enumerate()
-        .flat_map(|(n, line)| {
-            font.layout(
-                line,
-                scale,
-                rusttype::point(20.0, 20.0 + v_metrics.ascent + advance_height * n as f32),
-            )
-        })
+    let glyphs: Vec<_> = font
+        .layout(
+            text.as_ref(),
+            scale,
+            rusttype::point(20.0, 20.0 + v_metrics.ascent),
+        )
         .collect();
 
+    let glyphs_height = (v_metrics.ascent - v_metrics.descent).ceil() as u32;
     let glyphs_width = {
         let min_x = glyphs
             .first()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
-            .ok_or(crate::error::NoneError)?;
+            .map(|g| g.pixel_bounding_box().unwrap().min.x)
+            .unwrap();
         let max_x = glyphs
             .last()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.x))
-            .ok_or(crate::error::NoneError)?;
+            .map(|g| g.pixel_bounding_box().unwrap().max.x)
+            .unwrap();
         (max_x - min_x) as u32
-    };
-
-    let glyphs_height = {
-        let min_y = glyphs
-            .first()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
-            .ok_or(crate::error::NoneError)?;
-        let max_y = glyphs
-            .last()
-            .and_then(|g| Some(g.pixel_bounding_box()?.max.y))
-            .ok_or(crate::error::NoneError)?;
-        (max_y - min_y) as u32
     };
 
     let mut image = image::DynamicImage::new_rgba8(glyphs_width + 40, glyphs_height + 40).to_rgba();
