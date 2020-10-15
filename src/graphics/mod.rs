@@ -620,11 +620,12 @@ impl GraphicsSystem {
     ) -> Result<(AutoCommandBuffer, Box<dyn GpuFuture + Send + Sync>), Box<dyn std::error::Error>>
     {
         let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
-        let mut cb_in_progress = AutoCommandBufferBuilder::primary_one_time_submit(
+        let mut builder = AutoCommandBufferBuilder::primary_one_time_submit(
             self.device.clone(),
             self.queue.family(),
-        )?
-        .begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
+        )?;
+
+        let mut cb_in_progress = builder.begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
 
         let mut previous_frame_end = std::mem::replace(
             &mut self.previous_frame_end,
@@ -664,8 +665,9 @@ impl GraphicsSystem {
                 (),
             )?;
         }
+        cb_in_progress.end_render_pass()?;
         Ok((
-            cb_in_progress.end_render_pass()?.build()?,
+            builder.build()?,
             previous_frame_end,
         ))
     }
