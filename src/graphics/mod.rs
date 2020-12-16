@@ -625,7 +625,8 @@ impl GraphicsSystem {
             self.queue.family(),
         )?;
 
-        let mut cb_in_progress = builder.begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
+        let mut cb_in_progress =
+            builder.begin_render_pass(self.framebuffers[image_num].clone(), false, clear_values)?;
 
         let mut previous_frame_end = std::mem::replace(
             &mut self.previous_frame_end,
@@ -666,10 +667,7 @@ impl GraphicsSystem {
             )?;
         }
         cb_in_progress.end_render_pass()?;
-        Ok((
-            builder.build()?,
-            previous_frame_end,
-        ))
+        Ok((builder.build()?, previous_frame_end))
     }
 
     fn do_run(

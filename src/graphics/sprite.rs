@@ -56,7 +56,6 @@ impl<'a> System<'a> for SpriteSystem {
                     lazy.remove::<GameObjectComponent<graphics::Graphics>>(entity);
                 }
             }
-            trace!("Finished!");
         }
     }
 }
