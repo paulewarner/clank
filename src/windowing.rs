@@ -196,7 +196,7 @@ impl WindowSystem {
         self.event_loop.run(move |ev, _, control_flow| {
             if let Ok(event) = WinitEvent::try_from(ev) {
                 match send_event(event, &program_send, &input_send, &window_send) {
-                    Ok(Some(ev)) => should_close = true,
+                    Ok(Some(_ev)) => should_close = true,
                     Ok(None) => (),
                     Err(e) => error!("Failed to send event: {}", e),
                 }
@@ -232,15 +232,15 @@ fn send_event(
         WinitEvent::ProgramEvent(program_event) => program_send
             .send(program_event.clone())
             .map_err(|y| format!("Failed to send chan, {}", y))
-            .map(|x| Some(program_event)),
+            .map(|_x| Some(program_event)),
         WinitEvent::InputEvent(input_event) => input_send
             .send(input_event)
             .map_err(|y| format!("Failed to send chan, {}", y))
-            .map(|x| None),
+            .map(|_x| None),
         WinitEvent::WindowEvent(window_event) => window_send
             .send(window_event)
             .map_err(|y| format!("Failed to send chan, {}", y))
-            .map(|x| None),
+            .map(|_x| None),
     }
 }
 
