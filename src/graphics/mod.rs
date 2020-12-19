@@ -102,8 +102,7 @@ pub struct Graphics {
     texture_buffer: Option<Arc<dyn DescriptorSet + Send + Sync>>,
     texture_position: (f32, f32),
     texture_size: (f32, f32),
-    flipped_horizontally: bool,
-    flipped_vertically: bool,
+    transform: na::Matrix3<f32>
 }
 
 pub struct GraphicsBuilder {
@@ -114,8 +113,7 @@ pub struct GraphicsBuilder {
     texture_position: Option<(f32, f32)>,
     texture_size: Option<(f32, f32)>,
     image: Option<ImageDesc>,
-    flipped_horizontally: bool,
-    flipped_vertically: bool,
+    transform: na::Matrix3<f32>
 }
 
 enum ImageDesc {
@@ -155,12 +153,12 @@ impl GraphicsBuilder {
     }
 
     pub fn flipped_horizontally(mut self) -> Self {
-        self.flipped_horizontally = true;
+        self.transform = flip_matrix(false, true) * self.transform;
         self
     }
 
     pub fn flipped_vertically(mut self) -> Self {
-        self.flipped_vertically = true;
+        self.transform = flip_matrix(true, false) * self.transform;
         self
     }
 
@@ -203,8 +201,7 @@ impl GraphicsBuilder {
             texture_buffer: None,
             vertex_buffer: None,
             rotation: self.rotation.unwrap_or(0.0),
-            flipped_horizontally: self.flipped_horizontally,
-            flipped_vertically: self.flipped_vertically,
+            transform: self.transform
         })
     }
 }
@@ -219,8 +216,7 @@ impl Graphics {
             texture_position: None,
             texture_size: None,
             image: None,
-            flipped_horizontally: false,
-            flipped_vertically: false,
+            transform: na::Matrix3::identity()
         }
     }
 
@@ -286,7 +282,7 @@ impl Graphics {
         let upper_left = na::Vector3::new(lower_x, upper_y, 1.0);
         let upper_right = na::Vector3::new(upper_x, upper_y, 1.0);
 
-        let flip_matrix = flip_matrix(self.flipped_horizontally, self.flipped_vertically);
+        let transform_matrix = self.transform;
         let viewport_matrix = viewport_matrix(viewport_width as f32, viewport_height as f32)
             .try_inverse()
             .expect("unreachable");
@@ -295,7 +291,7 @@ impl Graphics {
         let scale_matrix = scale_matrix(self.scale, self.scale);
 
         let transform =
-            viewport_matrix * translation_matrix * flip_matrix * rotation_matrix * scale_matrix;
+            viewport_matrix * translation_matrix * transform_matrix * rotation_matrix * scale_matrix;
 
         let (t_lower_x, t_upper_x, t_lower_y, t_upper_y) = self.create_vertexes_for_position(
             dimensions,
