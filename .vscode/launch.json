@@ -21,26 +21,38 @@
             },
             "args": [],
             "env": {
-                "VULKAN_SDK": "/Users/pwarner/vulkansdk-macos-1.1.114.0/macOS",
-                "PATH": "/Users/pwarner/vulkansdk-macos-1.1.114.0/macOS/bin:$PATH",
-                "DYLD_LIBRARY_PATH": "/Users/pwarner/vulkansdk-macos-1.1.114.0/macOS/lib:$DYLD_LIBRARY_PATH",
-                "VK_ICD_FILENAMES": "/Users/pwarner/vulkansdk-macos-1.1.114.0/macOS/etc/vulkan/icd.d/MoltenVK_icd.json",
-                "VK_LAYER_PATH": "/Users/pwarner/vulkansdk-macos-1.1.114.0/macOS/etc/vulkan/explicit_layer.d"
+                "VULKAN_SDK": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS",
+                "PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/bin:$PATH",
+                "DYLD_LIBRARY_PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/lib:$DYLD_LIBRARY_PATH",
+                "VK_ICD_FILENAMES": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/share/vulkan/icd.d/MoltenVK_icd.json",
+                "VK_LAYER_PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/share/vulkan/explicit_layer.d"
             },
             "cwd": "${workspaceFolder}"
         },
         {
-            "name": "Lua Test",
             "type": "lldb",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/luatest",
+            "name": "Lua Test",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=luatest",
+                    "--package=clank"
+                ],
+                "filter": {
+                    "name": "luatest",
+                    "kind": "bin"
+                }
+            },
             "args": [],
-            "cwd": "${workspaceFolder}",
-            "env": {"RUST_BACKTRACE": "1"},
-            "preLaunchTask": {
-                "type": "cargo",
-                "subcommand": "build"
-            }
-        }
+            "env": {
+                "VULKAN_SDK": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS",
+                "PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/bin:$PATH",
+                "DYLD_LIBRARY_PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/lib:$DYLD_LIBRARY_PATH",
+                "VK_ICD_FILENAMES": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/share/vulkan/icd.d/MoltenVK_icd.json",
+                "VK_LAYER_PATH": "/Users/pwarner/source/vulkansdk-macos-1.2.162.0/macOS/share/vulkan/explicit_layer.d"
+            },
+            "cwd": "${workspaceFolder}"
+        },
     ]
 }

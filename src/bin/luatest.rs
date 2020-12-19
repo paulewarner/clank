@@ -9,13 +9,7 @@ fn main() {
                         .build()
                         .unwrap(),
                 )
-                .with_component(clank::position::Position::new(0.0, 0.0))
-                .with_component(
-                    clank::script::Script::new()
-                        .with_script_file("scripts/test.xml")
-                        .expect("Failed to load test file!")
-                        .build(),
-                );
+                .with_component(clank::position::Position::new(0.0, 0.0));
             handle.add(clank);
         });
 }
